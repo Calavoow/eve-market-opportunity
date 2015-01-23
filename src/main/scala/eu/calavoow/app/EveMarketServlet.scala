@@ -6,11 +6,10 @@ import api.Login
 
 import scala.io.Source
 
-class EveMarketServlet extends EveMarketOpportunityStack {
+class EveMarketServlet extends EveMarketOpportunityStack with CsrfTokenSupport {
 
   get("/") {
-    val loginUrl = Login.loginUrl.getOrElse(halt(500, "Reading the api.conf went wrong"))
-
+    val loginUrl = Login.loginUrl(csrfToken).getOrElse(halt(500, "Reading the api.conf went wrong"))
     <html>
       <body>
         <h1><a href={loginUrl}>Please login</a></h1>
@@ -20,9 +19,22 @@ class EveMarketServlet extends EveMarketOpportunityStack {
 
   get("/login") {
     val oLoginParams = Login.LoginParams.unapply(params)
-    val loginParams = oLoginParams match {
-      case Some(x) ⇒ x
-      case None ⇒ halt(400, "Get paramaters are not correct")
+    oLoginParams match {
+      case Some(loginParams) ⇒
+        session.setAttribute("loginParams", loginParams)
+        redirect("market")
+      case None ⇒
+        halt(400, "Get paramaters are not correct")
     }
+  }
+
+  get("/market") {
+    val loginParams = Option(session.getAttribute("loginParams"))
+
+    <html>
+      <body>
+        Your token: {session.getAttribute("loginParams")}
+      </body>
+    </html>
   }
 }

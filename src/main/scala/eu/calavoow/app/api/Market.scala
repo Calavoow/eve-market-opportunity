@@ -1,15 +1,10 @@
-package api
+package eu.calavoow.app.api
 
-import config.Config.CrestAuthentication
-import eu.calavoow.app.api.Map
-import Map.CrestLink
+import eu.calavoow.app.api.Models
+import eu.calavoow.app.api.Models.{Root, CrestLink}
 
 object Market {
-	val endpoint = "https://crest.eveonline.com/"
-
-	def getMarketOrders(auth: CrestAuthentication) = {
-		val rootCrestLink = CrestLink[Map.Root](endpoint)
-		val root = rootCrestLink.followLink
+	def getMarketOrders(auth: String) = {
+		val root = Root.apply
 	}
-
 }

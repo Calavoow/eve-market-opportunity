@@ -2,7 +2,7 @@ package eu.calavoow.app.api
 
 import java.util.Date
 
-import config.Config
+import eu.calavoow.app.config.Config
 import org.joda.time.Seconds
 
 import scala.io.{Codec, Source}

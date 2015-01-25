@@ -1,4 +1,4 @@
-package config
+package eu.calavoow.app.config
 
 import java.io.Reader
 

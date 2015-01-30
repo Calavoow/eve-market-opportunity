@@ -30,7 +30,8 @@ object EveMarketOpportunityBuild extends Build {
         "org.eclipse.jetty" % "jetty-plus" % "9.1.5.v20140505" % "container",
         "javax.servlet" % "javax.servlet-api" % "3.1.0",
         "com.typesafe" % "config" % "1.2.1",
-        "org.scalaj" %% "scalaj-http" % "1.1.0"
+        "org.scalaj" %% "scalaj-http" % "1.1.0",
+        "io.spray" %%  "spray-json" % "1.3.1"
       ),
       scalateTemplateConfig in Compile <<= (sourceDirectory in Compile){ base =>
         Seq(

@@ -24,6 +24,17 @@ class EveMarketServlet extends EveMarketOpportunityStack with CsrfTokenSupport {
 	}
 
 	get("/login") {
+		<html>
+			<head>
+			</head>
+			<body>
+				Please wait, processing login information.
+			</body>
+		</html>
+
+	}
+
+	post("/loginToken") {
 		val oLoginParams = Login.LoginParams.unapply(params)
 		oLoginParams match {
 			case Some(loginParams) ⇒

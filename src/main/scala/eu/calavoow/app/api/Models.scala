@@ -8,9 +8,9 @@ object Models {
 
 	object CrestLink {
 		object CrestProtocol extends DefaultJsonProtocol {
-			implicit def crestLinkFormat[T <: CrestContainer]: RootJsonFormat[CrestLink[T]] = jsonFormat1(CrestLink[T])
-			implicit val rootFormat : RootJsonFormat[Root] = jsonFormat1(Root.apply)
-			implicit val marketFormat : RootJsonFormat[MarketPrices] = jsonFormat1(MarketPrices)
+			implicit val rootFormat : JsonFormat[Root] = lazyFormat(jsonFormat1(Root.apply))
+			implicit val marketFormat : JsonFormat[MarketPrices] = jsonFormat1(MarketPrices)
+			implicit val marketCrestLinkFormat: JsonFormat[CrestLink[MarketPrices]] = lazyFormat(jsonFormat(CrestLink[MarketPrices] _, "href"))
 		}
 	}
 
@@ -19,7 +19,8 @@ object Models {
 	 * @param href The Crest URL to the next link
 	 * @tparam T The type of CrestContainer to construct.
 	 */
-	case class CrestLink[T <: CrestContainer](href: String) {
+	case class CrestLink[T : JsonFormat](href: String) {
+		def followLink(auth: String) : T = followLink(Some(auth))
 		def followLink(auth: Option[String]): T = {
 			//get
 			val postRequest = Http(href).method("GET")
@@ -35,6 +36,7 @@ object Models {
 			if(response.isError) {
 				new Control {}.halt(response.code, response.body)
 			}
+
 			println(response.body)
 
 
@@ -51,6 +53,7 @@ object Models {
 	sealed trait CrestContainer
 	object Root {
 		def fetch(auth: String) : Root = {
+			import CrestLink.CrestProtocol._
 			// The only "static" CREST URL.
 			val endpoint = "https://crest.eveonline.com/"
 			CrestLink[Root](endpoint).followLink(Some(auth))

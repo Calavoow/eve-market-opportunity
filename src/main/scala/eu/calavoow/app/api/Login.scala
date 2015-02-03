@@ -18,9 +18,9 @@ object Login {
 				s"$oathURL?" +
 					s"response_type=token" +
 					s"&client_id=${auth.clientId}" +
-					s"&scope=" +
-					s"&redirect_uri=$redirectURL"
-//					s"&state=$csrfToken"
+					s"&scope=publicData" +
+					s"&redirect_uri=$redirectURL" +
+					s"&state=$csrfToken"
 			}
 	}
 

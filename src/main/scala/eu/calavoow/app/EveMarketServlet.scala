@@ -5,6 +5,7 @@ import java.util.Date
 import eu.calavoow.app.api.Login.LoginParams
 import eu.calavoow.app.api.Market
 import org.scalatra._
+import org.slf4j.LoggerFactory
 import scalate.ScalateSupport
 import api.Login
 
@@ -12,7 +13,10 @@ import scala.io.Source
 
 class EveMarketServlet extends EveMarketOpportunityStack with CsrfTokenSupport {
 
+	val logger = LoggerFactory.getLogger(getClass)
+
 	get("/") {
+		logger.debug(csrfKey)
 		val loginUrl = Login.loginUrl(csrfToken).getOrElse(halt(500, "Reading the api.conf went wrong"))
 		<html>
 			<body>
@@ -26,6 +30,7 @@ class EveMarketServlet extends EveMarketOpportunityStack with CsrfTokenSupport {
 	get("/login") {
 		<html>
 			<head>
+				<script src="js/login.js"></script>
 			</head>
 			<body>
 				Please wait, processing login information.
@@ -39,7 +44,7 @@ class EveMarketServlet extends EveMarketOpportunityStack with CsrfTokenSupport {
 		oLoginParams match {
 			case Some(loginParams) ⇒
 				session.setAttribute("loginParams", loginParams)
-				redirect(url("/market"))
+				Ok
 			case None ⇒
 				halt(400, "Get paramaters are not correct")
 		}

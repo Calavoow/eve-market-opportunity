@@ -19,9 +19,13 @@ class EveMarketServlet extends EveMarketOpportunityStack with CsrfTokenSupport {
 		logger.debug(csrfKey)
 		val loginUrl = Login.loginUrl(csrfToken).getOrElse(halt(500, "Reading the api.conf went wrong"))
 		<html>
+			<head>
+				<script src="js/cookie.js"></script>
+				<script src="js/home.js"></script>
+			</head>
 			<body>
 				<h1>
-					<a href={loginUrl}>Please login</a>
+					<a id="login" csrftoken={csrfToken} href={loginUrl}>Please login</a>
 				</h1>
 			</body>
 		</html>
@@ -30,6 +34,7 @@ class EveMarketServlet extends EveMarketOpportunityStack with CsrfTokenSupport {
 	get("/login") {
 		<html>
 			<head>
+				<script src="js/cookie.js"></script>
 				<script src="js/login.js"></script>
 			</head>
 			<body>
@@ -52,9 +57,9 @@ class EveMarketServlet extends EveMarketOpportunityStack with CsrfTokenSupport {
 
 	get("/market") {
 		val ologinParams = Option(session.getAttribute("loginParams")).map(_.asInstanceOf[LoginParams])
-			.filter { loginParams ⇒
-			loginParams.expiresOn.after(new Date())
-		}
+//			.filter { loginParams ⇒
+//			loginParams.expiresOn.after(new Date())
+//		}
 
 		ologinParams match {
 			case None ⇒

@@ -28,12 +28,11 @@ object Login {
 		def unapply(params: Map[String, String]) = {
 			val token = params.get("access_token")
 			val tType = params.get("token_type")
-			val expiresIn = params.get("expires_in").map(_.toInt)
+//			val expiresIn = params.get("expires_in").map(_.toInt)
 			for(x ← token;
-				y ← tType;
-				z ← expiresIn) yield {
-				val date = new Date(System.currentTimeMillis() + z * 1000)
-				LoginParams(x,y,date)
+				y ← tType) yield {
+//				val date = new Date(System.currentTimeMillis() + z * 1000)
+				LoginParams(x,y)
 			}
 		}
 	}
@@ -42,7 +41,6 @@ object Login {
 	 * The returned GET parameters from an SSO redirect
 	 * @param accessToken
 	 * @param tokenType
-	 * @param expiresOn
 	 */
-	case class LoginParams(accessToken: String, tokenType: String, expiresOn: Date)
+	case class LoginParams(accessToken: String, tokenType: String)
 }

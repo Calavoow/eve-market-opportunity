@@ -9,6 +9,8 @@ object Market {
 	def getMarketOrders(auth: String) = {
 		val root = Root.fetch(auth)
 		logger.info(root.toString)
-		val marketPrices = root.regions.followLink(auth)
+		val regions = root.regions.followLink(auth)
+		logger.info(regions.toString)
+
 	}
 }

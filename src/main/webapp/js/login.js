@@ -7,17 +7,16 @@ window.onload = function() {
 		var matches = h.match(r);
 		var obj = {
 			"access_token": matches[1],
-			"token_type": matches[2],
-			"expires_in": matches[3],
+			"token_type": matches[2]
 		};
 
-		sendData(obj, matches[4]);
+		sendData(obj, parseInt(matches[3]), matches[4]);
 	} else {
 		alert("Please go to the homepage to login.");
 	}
 
 	//Src: https://developer.mozilla.org/en-US/docs/Web/Guide/HTML/Forms/Sending_forms_through_JavaScript
-	function sendData(data, csrfToken) {
+	function sendData(data, expiresIn, csrfToken) {
 		console.log(data);
 		var XHR = new XMLHttpRequest();
 		var urlEncodedData = "";
@@ -38,6 +37,8 @@ window.onload = function() {
 			if(event.currentTarget.status != 200) {
 				alert('Unsuccessfully sent data, please retry logging in.');
 			} else {
+				docCookies.setItem("access_token", data["access_token"], expiresIn);
+				docCookies.setItem("token_type", data["token_type"], expiresIn);
 				window.location.replace('market');
 			}
 		});

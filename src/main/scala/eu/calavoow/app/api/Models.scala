@@ -1,5 +1,7 @@
 package eu.calavoow.app.api
 
+import org.slf4j.LoggerFactory
+
 import scalaj.http.{HttpRequest, Http}
 import org.scalatra.Control
 import spray.json._
@@ -16,9 +18,9 @@ object Models {
 			implicit val rootUserCountsFormat: JsonFormat[Root.UserCounts] = jsonFormat4(Root.UserCounts)
 			implicit val rootIndustryFormat: JsonFormat[Root.Industry] = jsonFormat5(Root.Industry)
 			implicit val rootClientsFormat: JsonFormat[Root.Clients] = jsonFormat2(Root.Clients)
-			implicit val regionsCrestLinkFormat: JsonFormat[CrestLink[Regions]] = jsonFormat1(CrestLink[Regions])
 
 			implicit val regionsFormat: JsonFormat[Regions] = lazyFormat(jsonFormat5(Regions.apply))
+			implicit val regionsCrestLinkFormat: JsonFormat[CrestLink[Regions]] = jsonFormat(CrestLink[Regions] _, "href")
 			implicit val regionsItemFormat: JsonFormat[Regions.Item] = jsonFormat2(Regions.Item)
 		}
 
@@ -30,26 +32,29 @@ object Models {
 	 * @tparam T The type of CrestContainer to construct.
 	 */
 	case class CrestLink[T: JsonFormat](href: String) {
+		val logger = LoggerFactory.getLogger(getClass)
+
 		def followLink(auth: String): T = followLink(Some(auth))
 
 		def followLink(auth: Option[String]): T = {
+			logger.info(s"Fetching with $auth")
 			//get
 			val postRequest = Http(href).method("GET")
 
 			val acceptRequest = postRequest.header("Accept", "application/json, charset=utf-8")
 			// If the auth is set then add it as parameter.
 			val authedRequest = auth.foldLeft(acceptRequest)((req: HttpRequest, authKey) ⇒ {
-				req.param("Authentication", s"Bearer + $authKey")
+				req.header("Authorization", s"Bearer $authKey")
 			})
+
+			logger.info(authedRequest.toString)
+			logger.info(s"Headers: ${authedRequest.headers.toString}")
 
 
 			val response = authedRequest.asString
 			if (response.isError) {
 				new Control {}.halt(response.code, response.body)
 			}
-
-			println(response.body)
-
 
 			//json to object
 			import CrestLink.CrestProtocol._
@@ -67,6 +72,7 @@ object Models {
 	sealed trait CrestContainer
 
 	case class UnImplementedCrestLink(href: String) extends CrestContainer
+
 	object Root {
 		def fetch(auth: String): Root = {
 			import CrestLink.CrestProtocol._

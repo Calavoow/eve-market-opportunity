@@ -6,11 +6,21 @@ import org.slf4j.LoggerFactory
 object Market {
 	val logger = LoggerFactory.getLogger(getClass)
 
-	def getMarketOrders(auth: String) = {
+	def getRegions(auth: String) = {
 		val root = Root.fetch(auth)
-		logger.info(root.toString)
 		val regions = root.regions.followLink(auth)
-		logger.info(regions.toString)
 
+		regions.items
+	}
+
+	def getMarketOrders(region: String, auth: String) = {
+		val root = Root.fetch(auth)
+		val regions = root.regions.followLink(auth)
+		val region = regions.items.find(_.name == region).map(_.href.followLink(auth))
+
+		val itemTypes = root.itemTypes.followLink(auth)
+		val nocxiumLink = itemTypes.items.find(_.name == "Nocxium").map(_.href)
+
+//		region.map(_.)
 	}
 }

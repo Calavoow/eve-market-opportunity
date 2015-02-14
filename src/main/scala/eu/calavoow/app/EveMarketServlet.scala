@@ -57,22 +57,37 @@ class EveMarketServlet extends EveMarketOpportunityStack with CsrfTokenSupport {
 
 	get("/market") {
 		val ologinParams = Option(session.getAttribute("loginParams")).map(_.asInstanceOf[LoginParams])
-//			.filter { loginParams ⇒
-//			loginParams.expiresOn.after(new Date())
-//		}
+		logger.info(s"User requesting region list: $ologinParams")
 
 		ologinParams match {
 			case None ⇒
-				halt(403, "Your session has expired")
+				halt(401, "Your session has expired")
 			case Some(loginParams) ⇒
-				val root = Market.getMarketOrders(loginParams.accessToken)
+				val regions = Market.getRegions(loginParams.accessToken)
+				val regionsList = for(region ← regions) yield {
+					<li><a href={s"market/${region.name}"}>{region.name}</a></li>
+				}
 				<html>
 					<body>
-						Your token:
-						{session.getAttribute("loginParams")}<br/>
-						Root:
-						{root}
+						<ul>
+							{regionsList}
+						</ul>
 					</body>
+				</html>
+		}
+	}
+
+	get("/market/:region") {
+		val oLoginParams = Option(session.getAttribute("loginParams")).map(_.asInstanceOf[LoginParams])
+		logger.info(s"User requesting region $oLoginParams")
+
+		oLoginParams match {
+			case None ⇒
+				halt(401, "Your session has expired")
+			case Some(loginParams) ⇒
+				val regionName = params("region")
+				val marketInfo = Market.getMarketOrders(regionName, loginParams.accessToken)
+				<html>
 				</html>
 		}
 	}

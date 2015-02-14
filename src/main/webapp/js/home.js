@@ -9,7 +9,6 @@ window.onload = function() {
 	        "access_token": access_token,
 	        "token_type": token_type
 	    };
-	    alert(obj);
 	    sendData(obj, csrfToken)
 	}
 

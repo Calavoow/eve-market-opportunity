@@ -2,8 +2,10 @@ package eu.calavoow.app.api
 
 import java.net.SocketTimeoutException
 
+import eu.calavoow.app.api.Models.ItemTypes.Item
 import org.slf4j.LoggerFactory
 
+import scala.collection.{SeqLike, LinearSeq}
 import scalaj.http.{HttpRequest, Http}
 import org.scalatra.Control
 import spray.json._
@@ -36,7 +38,7 @@ object Models {
 			implicit val itemTypesFormat: JsonFormat[ItemTypes] = lazyFormat(jsonFormat7(ItemTypes.apply))
 			implicit val itemTypesCrestLinkFormat: JsonFormat[CrestLink[ItemTypes]] = jsonFormat(CrestLink[ItemTypes] _, "href")
 			implicit val itemTypesItemFormat: JsonFormat[ItemTypes.Item] = jsonFormat2(ItemTypes.Item)
-			
+
 			implicit val marketOrdersFormat: JsonFormat[MarketOrders] = lazyFormat(jsonFormat5(MarketOrders.apply))
 			implicit val marketOrdersCrestLinkFormat: JsonFormat[CrestLink[MarketOrders]] = jsonFormat(CrestLink[MarketOrders] _, "href")
 			implicit val marketOrdersLocationFormat: JsonFormat[MarketOrders.Reference] = jsonFormat4(MarketOrders.Reference)
@@ -68,7 +70,7 @@ object Models {
 		 * @param params Optional parameters to add to the request.
 		 * @return The constructed Crest class.
 		 */
-		def followLink(auth: Option[String], params : Map[String,String] = Map.empty): T = {
+		def followLink(auth: Option[String], params: Map[String, String] = Map.empty): T = {
 			logger.trace(s"Fetching with $auth")
 			//get
 			val postRequest = Http(href).method("GET")
@@ -109,11 +111,11 @@ object Models {
 	case class UnImplementedCrestLink(href: String) extends CrestContainer
 
 	object Root {
-		def fetch(auth: String): Root = {
+		def fetch(auth: Option[String]): Root = {
 			import CrestLink.CrestProtocol._
 			// The only "static" CREST URL.
 			val endpoint = "https://crest.eveonline.com/"
-			CrestLink[Root](endpoint).followLink(Some(auth))
+			CrestLink[Root](endpoint).followLink(auth)
 		}
 
 		case class Motd(dust: UnImplementedCrestLink,
@@ -133,6 +135,7 @@ object Models {
 
 		case class Clients(dust: UnImplementedCrestLink,
 		                   eve: UnImplementedCrestLink)
+
 	}
 
 	case class Root(crestEndpoint: UnImplementedCrestLink,
@@ -159,7 +162,9 @@ object Models {
 	                marketTypes: UnImplementedCrestLink) extends CrestContainer
 
 	object Regions {
+
 		case class Item(href: CrestLink[Region], name: String)
+
 	}
 
 	case class Regions(totalCount_str: String,
@@ -169,57 +174,57 @@ object Models {
 	                   totalCount: Double) extends CrestContainer
 
 	case class Region(description: String,
-		                         marketBuyOrders: CrestLink[MarketOrders],
-		                         name: String,
-		                         constellations: List[UnImplementedCrestLink],
-		                         marketSellOrders: CrestLink[MarketOrders]
-		                         ) extends CrestContainer
+	                  marketBuyOrders: CrestLink[MarketOrders],
+	                  name: String,
+	                  constellations: List[UnImplementedCrestLink],
+	                  marketSellOrders: CrestLink[MarketOrders]) extends CrestContainer
 
 	object ItemTypes {
+
 		case class Item(href: UnImplementedCrestLink, name: String)
+
 	}
 
 	case class ItemTypes(totalCount_str: String,
-		                         pageCount: Double,
-		                         items: List[ItemTypes.Item],
-		                         next: Option[CrestLink[ItemTypes]],
-		                         totalCount: Double,
-		                         pageCount_str: String,
-		                         previous: Option[CrestLink[ItemTypes]]
-		                         ) extends CrestContainer
-
+	                     pageCount: Double,
+	                     items: List[Item],
+	                     next: Option[CrestLink[ItemTypes]],
+	                     totalCount: Double,
+	                     pageCount_str: String,
+	                     previous: Option[CrestLink[ItemTypes]]) extends CrestContainer
 
 	object MarketOrders {
+
 		case class Reference(id_str: String,
-			                   href: UnImplementedCrestLink,
-			                   id: Double,
-			                   name: String)
+		                     href: UnImplementedCrestLink,
+		                     id: Double,
+		                     name: String)
 
 		case class Item(volume_str: String,
-			                buy: Boolean,
-			                issued: String,
-			                price: Double,
-			                volumeEntered: Double,
-			                minVolume: Double,
-			                volume: Double,
-			                range: String,
-			                href: UnImplementedCrestLink,
-			                duration_str: String,
-			                location: Reference,
-			                duration: Double,
-			                minVolume_str: String,
-			                volumeEntered_str: String,
-							`type`: Reference,
-							id: Double,
-							id_str: String)
+		                buy: Boolean,
+		                issued: String,
+		                price: Double,
+		                volumeEntered: Double,
+		                minVolume: Double,
+		                volume: Double,
+		                range: String,
+		                href: UnImplementedCrestLink,
+		                duration_str: String,
+		                location: Reference,
+		                duration: Double,
+		                minVolume_str: String,
+		                volumeEntered_str: String,
+		                `type`: Reference,
+		                id: Double,
+		                id_str: String)
 
 	}
 
 	case class MarketOrders(totalCount_str: String,
-		                         items: List[Items],
-		                         pageCount: Double,
-		                         pageCount_str: String,
-		                         totalCount: Double) extends CrestContainer
+	                        items: List[MarketOrders.Item],
+	                        pageCount: Double,
+	                        pageCount_str: String,
+	                        totalCount: Double) extends CrestContainer
 
 
 }

@@ -86,8 +86,14 @@ class EveMarketServlet extends EveMarketOpportunityStack with CsrfTokenSupport {
 				halt(401, "Your session has expired")
 			case Some(loginParams) ⇒
 				val regionName = params("region")
-				val marketInfo = Market.getMarketOrders(regionName, loginParams.accessToken)
+				val marketInfo = Market.getMarketOrders(regionName, "Nocxium", loginParams.accessToken)
+					.getOrElse(halt(500, "Something went wrong fetching market orders"))
 				<html>
+					<body>
+						{
+						marketInfo
+						}
+					</body>
 				</html>
 		}
 	}

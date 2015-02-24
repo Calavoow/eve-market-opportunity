@@ -7,7 +7,9 @@
     </encoder>
   </appender>
 
-  <root level="debug">
+	<logger name="eu.calavoow.app" level="TRACE" />
+
+  <root level="INFO">
     <appender-ref ref="STDOUT" />
   </root>
 </configuration>

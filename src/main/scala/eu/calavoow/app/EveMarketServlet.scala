@@ -16,7 +16,7 @@ class EveMarketServlet extends EveMarketOpportunityStack with CsrfTokenSupport {
 	val logger = LoggerFactory.getLogger(getClass)
 
 	get("/") {
-		logger.debug(csrfKey)
+		logger.debug(csrfKey.toString)
 		val loginUrl = Login.loginUrl(csrfToken).getOrElse(halt(500, "Reading the api.conf went wrong"))
 		<html>
 			<head>

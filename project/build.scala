@@ -31,8 +31,8 @@ object EveMarketOpportunityBuild extends Build {
         "javax.servlet" % "javax.servlet-api" % "3.1.0",
         "com.typesafe" % "config" % "1.2.1",
         "org.scalaj" %% "scalaj-http" % "1.1.0",
-        "io.spray" %%  "spray-json" % "1.3.1",
-	      "com.github.cb372" %% "scalacache-guava" % "0.5.2"
+        "io.spray" %%  "spray-json" % "1.3.1"
+//	    "com.github.cb372" %% "scalacache-guava" % "0.5.2"
       ),
       scalateTemplateConfig in Compile <<= (sourceDirectory in Compile){ base =>
         Seq(

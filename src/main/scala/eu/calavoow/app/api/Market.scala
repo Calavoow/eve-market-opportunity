@@ -4,15 +4,15 @@ import eu.calavoow.app.api.Models.{MarketOrders, ItemTypes, Root}
 import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
-import scalacache._
-import memoization._
-import scalacache.guava.GuavaCache
+//import scalacache._
+//import memoization._
+//import scalacache.guava.GuavaCache
 import concurrent.duration._
 import language.postfixOps
 
 object Market {
 	val logger = LoggerFactory.getLogger(getClass)
-	implicit val scalaCache = ScalaCache(GuavaCache())
+//	implicit val scalaCache = ScalaCache(GuavaCache())
 
 	def getRegions(auth: String) = {
 		val oAuth = Some(auth)
@@ -24,13 +24,13 @@ object Market {
 
 	def getMarketOrders(regionName: String,
 	                    itemTypeName: String,
-	                    @cacheKeyExclude auth: String
-		                   ): Option[(MarketOrders, MarketOrders)] = memoize(5 minutes) {
+	                    auth: String
+		                   ): Option[(MarketOrders, MarketOrders)] = {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
 		val regions = root.regions.followLink(oAuth)
 		logger.debug(regions.toString)
-		val region = regions.items.find(_.name == regionName).map(_.href.followLink(auth))
+		val region = regions.items.find(_.name == regionName).map(_.link.followLink(auth))
 		logger.debug(region.toString)
 
 		// Get the itemType url.
@@ -99,7 +99,7 @@ object Market {
 		(weightedPrice(buyOrdered), weightedPrice(sellOrdered))
 	}
 
-	def getAllItemTypes(@cacheKeyExclude auth: String) : List[ItemTypes.Item] = memoize(1 day){
+	def getAllItemTypes(auth: String) : List[ItemTypes.Item] = {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
 		val itemTypesRoot = root.itemTypes.followLink(oAuth)

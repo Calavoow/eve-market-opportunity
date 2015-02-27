@@ -1,46 +1,55 @@
 package eu.calavoow.app.api
 
-import java.util.Date
-
 import eu.calavoow.app.config.Config
-import org.joda.time.Seconds
+import org.slf4j.LoggerFactory
+import scala.util.{Failure, Success}
+import scalaj.http.Http
 
 import scala.io.{Codec, Source}
 
 object Login {
-	def loginUrl(csrfToken: String) : Option[String] = {
+	val logger = LoggerFactory.getLogger(getClass)
+	def loginUrl(csrfToken: String) = {
 		val oathURL = "https://login.eveonline.com/oauth/authorize/"
 		val redirectURL = "http://localhost:8080/login"
-		Option(getClass.getResource("/api.conf"))
-			.map(Source.fromURL)
-			.flatMap { confF ⇒ Config.readApiConfig(confF.bufferedReader) }
-			.map { auth ⇒
-				s"$oathURL?" +
-					s"response_type=token" +
-					s"&client_id=${auth.clientId}" +
-					s"&scope=publicData" +
-					s"&redirect_uri=$redirectURL" +
-					s"&state=$csrfToken"
-			}
+		val config = Config.readApiConfig
+		s"$oathURL?" +
+			s"response_type=code" +
+			s"&client_id=${config.clientId}" +
+			s"&scope=publicData" +
+			s"&redirect_uri=$redirectURL" +
+			s"&state=$csrfToken"
+	}
+
+	def exchangeCode(accessCode: String) = {
+		val tokenEndpoint= "https://login.eveonline.com/oauth/token"
+		val config = Config.readApiConfig
+		val request = Http(tokenEndpoint)
+			.method("POST")
+			.auth(config.clientId,config.secretKey)
+			.param("grant_type","authorization_code")
+			.param("code", accessCode)
+
+		val result = request.asString
+		if(result.isSuccess) {
+			Some(result.body)
+		} else {
+			logger.info("Exchanging the EVE access code went wrong", result.toString)
+			None
+		}
 	}
 
 	object LoginParams {
-		def unapply(params: Map[String, String]) = {
+		def unapply(params: Map[String, String]) : Option[LoginParams] = {
 			val token = params.get("access_token")
-			val tType = params.get("token_type")
+			val refreshToken = params.get("refresh_token")
 //			val expiresIn = params.get("expires_in").map(_.toInt)
-			for(x ← token;
-				y ← tType) yield {
+			for(y ← refreshToken) yield {
 //				val date = new Date(System.currentTimeMillis() + z * 1000)
-				LoginParams(x,y)
+				LoginParams(token,y)
 			}
 		}
 	}
 
-	/**
-	 * The returned GET parameters from an SSO redirect
-	 * @param accessToken
-	 * @param tokenType
-	 */
-	case class LoginParams(accessToken: String, tokenType: String)
+	case class LoginParams(accessToken: Option[String], refreshToken: String)
 }

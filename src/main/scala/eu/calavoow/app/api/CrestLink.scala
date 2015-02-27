@@ -72,9 +72,9 @@ case class CrestLink[T: JsonFormat](href: String) {
 	def followLink(auth: Option[String], params: Map[String, String] = Map.empty): T = {
 		logger.trace(s"Fetching with $auth")
 		//get
-		val postRequest = Http(href).method("GET")
+		val getRequest = Http(href).method("GET")
 
-		val acceptRequest = postRequest.header("Accept", "application/json, charset=utf-8")
+		val acceptRequest = getRequest.header("Accept", "application/json, charset=utf-8")
 		// If the auth is set then add it as parameter.
 		val authedRequest = auth.foldLeft(acceptRequest)((req: HttpRequest, authKey) ⇒ {
 			req.header("Authorization", s"Bearer $authKey")

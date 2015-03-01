@@ -3,7 +3,6 @@ package eu.calavoow.app.config
 import java.io.Reader
 
 import com.typesafe.config.ConfigFactory
-import eu.calavoow.app.api.Login.LoginParams._
 import org.scalatra.Control
 import org.slf4j.LoggerFactory
 

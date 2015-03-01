@@ -1,6 +1,5 @@
 package eu.calavoow.app.api
 
-import CrestLink.CrestProtocol._
 import spray.json.JsonFormat
 
 object Models {

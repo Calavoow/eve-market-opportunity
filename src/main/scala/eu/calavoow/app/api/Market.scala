@@ -1,17 +1,16 @@
 package eu.calavoow.app.api
 
-import eu.calavoow.app.api.Models.{MarketOrders, ItemTypes, Root}
+import com.typesafe.scalalogging.LazyLogging
+import eu.calavoow.app.api.Models.{ItemTypes, MarketOrders, Root}
 import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
 //import scalacache._
 //import memoization._
 //import scalacache.guava.GuavaCache
-import concurrent.duration._
-import language.postfixOps
+import scala.language.postfixOps
 
-object Market {
-	val logger = LoggerFactory.getLogger(getClass)
+object Market extends LazyLogging {
 //	implicit val scalaCache = ScalaCache(GuavaCache())
 
 	def getRegions(auth: String) = {
@@ -90,7 +89,7 @@ object Market {
 			var volumeLeft = volume
 			buyOrder.foldLeft(0.0d)((accum, buyOrder) ⇒ {
 				val volume = Math.min(buyOrder.volume, volumeLeft)
-				logger.debug(s"Volume: $volume")
+				logger.debug("Volume: {}", volume)
 				volumeLeft -= volume
 				accum + volume * buyOrder.price
 			})

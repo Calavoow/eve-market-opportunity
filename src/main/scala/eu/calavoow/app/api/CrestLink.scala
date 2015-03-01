@@ -2,14 +2,13 @@ package eu.calavoow.app.api
 
 import java.net.SocketTimeoutException
 
-import eu.calavoow.app.api.Models._
-import eu.calavoow.app.api.Models.NamedCrestLink
+import com.typesafe.scalalogging.LazyLogging
+import eu.calavoow.app.api.Models.{NamedCrestLink, _}
 import org.scalatra.Control
 import org.slf4j.LoggerFactory
-import scalaj.http.Http
 import spray.json._
 
-import scalaj.http.HttpRequest
+import scalaj.http.{Http, HttpRequest}
 
 object CrestLink {
 
@@ -51,8 +50,7 @@ object CrestLink {
  * @param href The Crest URL to the next link
  * @tparam T The type of CrestContainer to construct.
  */
-case class CrestLink[T: JsonFormat](href: String) {
-	private val logger = LoggerFactory.getLogger(getClass)
+case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
 
 	/**
 	 * A convenience method to call followLink without construction an authentication Option.
@@ -70,7 +68,7 @@ case class CrestLink[T: JsonFormat](href: String) {
 	 * @return The constructed Crest class.
 	 */
 	def followLink(auth: Option[String], params: Map[String, String] = Map.empty): T = {
-		logger.trace(s"Fetching with $auth")
+		logger.trace(s"Fetching with {}", auth)
 		//get
 		val getRequest = Http(href).method("GET")
 
@@ -91,7 +89,6 @@ case class CrestLink[T: JsonFormat](href: String) {
 			}
 
 			//json to crest object using implicit protocols.
-			import CrestLink.CrestProtocol._
 			val jsonAst = response.body.parseJson
 			logger.trace(jsonAst.prettyPrint)
 			jsonAst.convertTo[T]

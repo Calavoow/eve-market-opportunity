@@ -1,14 +1,12 @@
 package eu.calavoow.app.api
 
+import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.config.Config
-import org.slf4j.LoggerFactory
-import scala.util.{Failure, Success}
+
 import scalaj.http.Http
 
-import scala.io.{Codec, Source}
+object Login extends LazyLogging {
 
-object Login {
-	val logger = LoggerFactory.getLogger(getClass)
 	def loginUrl(csrfToken: String) = {
 		val oathURL = "https://login.eveonline.com/oauth/authorize/"
 		val redirectURL = "http://localhost:8080/login"
@@ -25,16 +23,15 @@ object Login {
 		val tokenEndpoint= "https://login.eveonline.com/oauth/token"
 		val config = Config.readApiConfig
 		val request = Http(tokenEndpoint)
-			.method("POST")
+			.postForm(Seq("grant_type" → "authorization_code", "code" → accessCode))
 			.auth(config.clientId,config.secretKey)
-			.param("grant_type","authorization_code")
-			.param("code", accessCode)
+		logger.trace(s"AccessCode Request, headers : ${request.headers}\n params ${request.params}")
 
 		val result = request.asString
 		if(result.isSuccess) {
 			Some(result.body)
 		} else {
-			logger.info("Exchanging the EVE access code went wrong", result.toString)
+			logger.info(s"Exchanging the EVE access code went wrong: $result")
 			None
 		}
 	}

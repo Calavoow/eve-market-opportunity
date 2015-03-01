@@ -1,16 +1,16 @@
 package eu.calavoow.app
 
+import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.api.Login.LoginParams
-import eu.calavoow.app.api.Market
+import eu.calavoow.app.api.{Login, Market}
 import eu.calavoow.app.config.Config
 import org.scalatra._
-import org.slf4j.LoggerFactory
-import scalate.ScalateSupport
-import api.Login
+import spray.json.DefaultJsonProtocol._
+import spray.json._
 
-class EveMarketServlet extends EveMarketOpportunityStack {
+import scala.util.{Failure, Success, Try}
 
-	val logger = LoggerFactory.getLogger(getClass)
+class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with LazyLogging {
 
 	get("/") {
 		val config = Config.readApiConfig
@@ -23,7 +23,7 @@ class EveMarketServlet extends EveMarketOpportunityStack {
 			</head>
 			<body>
 				<h1>
-					<a id="login" data-clientId={config.clientId} href="">Please login</a>
+					<a id="login" data-clientid={config.clientId} href="">Please login</a>
 				</h1>
 			</body>
 		</html>
@@ -32,6 +32,7 @@ class EveMarketServlet extends EveMarketOpportunityStack {
 	get("/login") {
 		<html>
 			<head>
+				<script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
 				<script src="js/cookie.js"></script>
 				<script src="js/login.js"></script>
 			</head>
@@ -41,14 +42,22 @@ class EveMarketServlet extends EveMarketOpportunityStack {
 		</html>
 	}
 
+	case class AccessCode(access_code: String)
 	post("/accessCode") {
-		val accessCode = params.get("access_code")
-		val oResult = accessCode flatMap(Login.exchangeCode)
+		implicit val accessCodeFormatter = jsonFormat1(AccessCode)
+		logger.trace("Exchanging access code")
+		contentType = formats("json")
+		// Try to convert the body to an AccessCode
+		val accessCode = Try(request.body.parseJson.convertTo[AccessCode].access_code)
+		logger.trace("parsed {}", accessCode.toString)
+		val oResult = accessCode map(Login.exchangeCode)
 		oResult match {
-			case Some(result) ⇒
-				Ok(result)
-			case None ⇒
+			case Success(Some(result)) ⇒
+				result
+			case Success(None) ⇒
 				halt(401, "Unable to exchange access code for auth token.")
+			case Failure(fail) ⇒
+				halt(400, "Provided arguments are wrong")
 		}
 	}
 

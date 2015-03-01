@@ -89,7 +89,7 @@ object Market extends LazyLogging {
 			var volumeLeft = volume
 			buyOrder.foldLeft(0.0d)((accum, buyOrder) ⇒ {
 				val volume = Math.min(buyOrder.volume, volumeLeft)
-				logger.debug("Volume: {}", volume)
+				logger.debug(s"Volume: $volume")
 				volumeLeft -= volume
 				accum + volume * buyOrder.price
 			})

@@ -1,22 +1,23 @@
 "use strict";
 
 window.onload = function() {
+	var tokenServer = "https://login.eveonline.com/oauth/token"
 	var h = window.location.hash;
 	if(h) {
-		var r = /access\_token=([^&]+)&token\_type=([^&]+)&expires\_in=([^&]+)&state=([^&]+)/;
+		var r = /code=([^&]+)&state=([^&]+)/;
 		var matches = h.match(r);
 		var obj = {
-			"access_token": matches[1],
-			"token_type": matches[2]
+			"code": matches[1],
 		};
+		var state = matches[2];
 
-		sendData(obj, parseInt(matches[3]), matches[4]);
+		sendData(obj, state);
 	} else {
 		alert("Please go to the homepage to login.");
 	}
 
 	//Src: https://developer.mozilla.org/en-US/docs/Web/Guide/HTML/Forms/Sending_forms_through_JavaScript
-	function sendData(data, expiresIn, csrfToken) {
+	function sendData(data, csrfToken) {
 		console.log(data);
 		var XHR = new XMLHttpRequest();
 		var urlEncodedData = "";

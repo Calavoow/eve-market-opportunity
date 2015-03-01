@@ -8,22 +8,22 @@ import org.slf4j.LoggerFactory
 import scalate.ScalateSupport
 import api.Login
 
-import scala.io.Source
-
 class EveMarketServlet extends EveMarketOpportunityStack {
 
 	val logger = LoggerFactory.getLogger(getClass)
 
 	get("/") {
 		val config = Config.readApiConfig
+		val loginLink = ""
 		<html>
 			<head>
+				<script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
 				<script src="js/cookie.js"></script>
 				<script src="js/home.js"></script>
 			</head>
 			<body>
 				<h1>
-					<a id="login" data-clientId={config.clientId}>Please login</a>
+					<a id="login" data-clientId={config.clientId} href="">Please login</a>
 				</h1>
 			</body>
 		</html>
@@ -59,7 +59,7 @@ class EveMarketServlet extends EveMarketOpportunityStack {
 				session.setAttribute("loginParams", loginParams)
 				Ok
 			case None ⇒
-				halt(400, "Get paramaters are incorrect")
+				halt(400, "Get parameters are incorrect")
 		}
 	}
 

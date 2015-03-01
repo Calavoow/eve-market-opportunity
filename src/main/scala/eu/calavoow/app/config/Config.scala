@@ -31,7 +31,16 @@ object Config {
 			.flatMap {
 			confF ⇒ Config.readApiConfig(confF.bufferedReader())
 		} getOrElse {
-			new Control {}.halt(500, "Unable to read api config.")
+			new Control {}.halt(500,
+				"""Unable to read api config.
+				  |Create an api.conf file in src/main/resources/api according to the following template:
+				  |```
+				  |api {
+				  |	clientId="xxxx"
+				  |	secretKey="xxxXXxxxx"
+				  |}
+				  |```
+				""".stripMargin)
 		}
 	}
 

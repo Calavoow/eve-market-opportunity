@@ -7,6 +7,8 @@ window.onload = function() {
 
 	if(access_token) {
 		window.location.replace("/market");
+	/*
+	 * Do not try to refresh, CCP generates internal server error.
 	} else if (refresh_token) {
 		var xhrRequest = d3.json("refreshToken");
 
@@ -28,6 +30,7 @@ window.onload = function() {
 					}
 				}
 		});
+	*/
 	} else {
 		var login_page = "https://login.eveonline.com/oauth/authorize/"
 		var csrf_token = uuidGen();

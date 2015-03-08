@@ -11,33 +11,43 @@ window.onload = function() {
             return;
         }
 
-		var obj = {
-			"access_code": matches[1],
-		};
+		var access_code = matches[1];
 		var state = matches[2];
 
 		var sessionCsrf = sessionStorage.getItem('csrf_token');
 		if(!sessionCsrf) {
-			if(window.confirm("Session timed out, retry logging in from the homepage.")) {
-                window.location.replace("/");
-            } // Else do nothing
+			gotoHomepage("Session timed out, retry logging in from the homepage.");
 		} else if(state !== sessionCsrf) {
-			alert("Your session has been hijacked by a third party.");
+			gotoHomepage("The security token has been changed. Retry logging in from the homepage.");
 		} else {
-			var xhrRequest = d3.xhr("accessCode")
-				.header("Content-Type", "application/json")
+			var xhrRequest = d3.json("authCode");
 
-			xhrRequest.post(JSON.stringify(obj), function(error, data) {
+			xhrRequest.post(access_code, function(error, data) {
 					if(error) {
-						alert(error.response)
+						alert(error.response);
 					} else {
-						console.log(data)
+						console.log(data);
+						var expected_keys = ['access_token','expires_in','refresh_token','token_type'];
+						if(expected_keys.every(function(elem) { return data.hasOwnProperty(elem) })) {
+							var expiryDate = new Date(((new Date()).getTime()) + data['expires_in']*1000);
+							docCookies.setItem('access_token', data['access_token'], expiryDate);
+							// The refresh token (presumably) has no expiry date.
+							docCookies.setItem('refresh_token', data['access_token'], Infinity);
+							docCookies.setItem('token_type', data['token_type'], expiryDate);
+							window.location.replace("/");
+						} else {
+							alert('Unexpected data received.')
+						}
 					}
-				})
+			});
 		}
 	} else {
-		if(window.confirm("Please go to the homepage to login.")) {
+		gotoHomepage("Please go to the homepage to login.");
+	}
+
+	function gotoHomepage(msg) {
+		if(window.confirm(msg)){
 			window.location.replace("/");
-		} // Else do nothing
+		}
 	}
 }

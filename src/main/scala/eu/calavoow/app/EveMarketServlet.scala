@@ -17,12 +17,13 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 		val loginLink = ""
 		<html>
 			<head>
-				<script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+				<title>Market Mapper Homepage</title>
+				<script src="js/d3.v3.min.js" charset="utf-8"></script>
 				<script src="js/cookie.js"></script>
 				<script src="js/home.js"></script>
 			</head>
 			<body>
-				<h1>
+				<h1 style="display:none">
 					<a id="login" data-clientid={config.clientId} href="">Please login</a>
 				</h1>
 			</body>
@@ -32,7 +33,7 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 	get("/login") {
 		<html>
 			<head>
-				<script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+				<script src="js/d3.v3.min.js" charset="utf-8"></script>
 				<script src="js/cookie.js"></script>
 				<script src="js/login.js"></script>
 			</head>
@@ -42,44 +43,57 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 		</html>
 	}
 
-	case class AccessCode(access_code: String)
-	post("/accessCode") {
-		implicit val accessCodeFormatter = jsonFormat1(AccessCode)
-		logger.trace("Exchanging access code")
+	/**
+	 * Expects in the message body only the access code or refresh token to be exchanged for the auth token.
+	 */
+	post("/authCode") {
 		contentType = formats("json")
-		// Try to convert the body to an AccessCode
-		val accessCode = Try(request.body.parseJson.convertTo[AccessCode].access_code)
-		logger.trace("parsed {}", accessCode.toString)
-		val oResult = accessCode map(Login.exchangeCode)
+
+		val authToken = cookies.get("auth_token")
+		if(authToken.isDefined) halt(400, "User already has a valid authentication token.")
+
+		val oResult = request.body match {
+			case "" ⇒
+				halt(400, "No access code given.")
+			case token ⇒
+				Login.exchangeAccessCode(token)
+		}
+
 		oResult match {
-			case Success(Some(result)) ⇒
+			case Some(result) ⇒
 				result
-			case Success(None) ⇒
+			case None ⇒
 				halt(401, "Unable to exchange access code for auth token.")
-			case Failure(fail) ⇒
-				halt(400, "Provided arguments are wrong")
 		}
 	}
 
 	post("/refreshToken") {
-		val oLoginParams = Login.LoginParams.unapply(params)
-		oLoginParams match {
-			case Some(loginParams) ⇒
-				session.setAttribute("loginParams", loginParams)
-				Ok
+		contentType = formats("json")
+
+		val authToken = cookies.get("access_token")
+		if(authToken.isDefined) halt(400, "User already has a valid authentication token.")
+
+		val oResult = request.body match {
+			case "" ⇒
+				halt(400, "No refresh token given.")
+			case token ⇒
+				Login.exchangeRefreshToken(token)
+		}
+
+		oResult match {
+			case Some(result) ⇒
+				result
 			case None ⇒
-				halt(400, "Get parameters are incorrect")
+				halt(401, "Unable to exchange access code for auth token.")
 		}
 	}
 
 	get("/market") {
-		val ologinParams = Option(session.getAttribute("loginParams")).map(_.asInstanceOf[LoginParams])
-		logger.debug(s"User requesting region list: $ologinParams")
+		val authCode = cookies.get("access_token")
 
-
-		ologinParams match {
-			case Some(LoginParams(Some(accessToken), _)) ⇒
-				val regions = Market.getRegions(accessToken)
+		authCode match {
+			case Some(auth) ⇒
+				val regions = Market.getRegions(auth)
 				val regionsList = for(region ← regions) yield {
 					<li><a href={s"market/${region.name}"}>{region.name}</a></li>
 				}
@@ -90,19 +104,17 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 						</ul>
 					</body>
 				</html>
-			case x ⇒ handleNoAuth(x)
+			case None ⇒ halt(401, "No authentication code provided.")
 		}
 	}
 
 	get("/market/:region") {
-		val oLoginParams = Option(session.getAttribute("loginParams")).map(_.asInstanceOf[LoginParams])
-		logger.info(s"User requesting region $oLoginParams")
+		val authCode = cookies.get("access_token")
 
-
-		oLoginParams match {
-			case Some(LoginParams(Some(accessToken),_)) ⇒
+		authCode match {
+			case Some(auth) ⇒
 				val regionName = params("region")
-				val marketInfo = Market.getMarketOrders(regionName, "Nocxium", accessToken)
+				val marketInfo = Market.getMarketOrders(regionName, "Nocxium", auth)
 					.getOrElse(halt(500, "Something went wrong fetching market orders"))
 				<html>
 					<body>
@@ -111,7 +123,7 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 						}
 					</body>
 				</html>
-			case x ⇒ handleNoAuth(x)
+			case None ⇒ halt(401, "No authentication code provided.")
 		}
 	}
 

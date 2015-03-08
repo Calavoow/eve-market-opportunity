@@ -2,18 +2,18 @@ package eu.calavoow.app.api
 
 import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.api.Models._
-import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
-//import scalacache._
-//import memoization._
-//import scalacache.guava.GuavaCache
+import scalacache._
+import memoization._
+import scalacache.guava.GuavaCache
 import scala.language.postfixOps
+import scala.concurrent.duration._
 
 object Market extends LazyLogging {
-//	implicit val scalaCache = ScalaCache(GuavaCache())
+	implicit val scalaCache = ScalaCache(GuavaCache())
 
-	def getRegions(auth: String) = {
+	def getRegions(@cacheKeyExclude auth: String) : List[NamedCrestLink[Region]]  = memoize {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
 		val regions = root.regions.followLink(oAuth)
@@ -23,8 +23,8 @@ object Market extends LazyLogging {
 
 	def getMarketOrders(regionName: String,
 	                    itemTypeName: String,
-	                    auth: String
-		                   ): Option[(MarketOrders, MarketOrders)] = {
+	                    @cacheKeyExclude auth: String
+		                   ): Option[(MarketOrders, MarketOrders)] = memoize(5 minutes) {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
 		val regions = root.regions.followLink(oAuth)
@@ -98,7 +98,7 @@ object Market extends LazyLogging {
 		(weightedPrice(buyOrdered), weightedPrice(sellOrdered))
 	}
 
-	def getAllItemTypes(auth: String) : List[UnImplementedNamedCrestLink] = {
+	def getAllItemTypes(@cacheKeyExclude auth: String) : List[UnImplementedNamedCrestLink] = memoize(2 days) {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
 		val itemTypesRoot = root.itemTypes.followLink(oAuth)

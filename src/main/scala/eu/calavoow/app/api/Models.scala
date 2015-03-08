@@ -13,6 +13,7 @@ object Models {
 	case class NamedCrestLink[T: JsonFormat](href: String, name: String) {
 		lazy val link = CrestLink[T](href)
 	}
+	case class UnImplementedNamedCrestLink(href: String, name: String) extends CrestContainer
 
 //	object NamedCrestLink {
 //		def apply[T: JsonFormat](href: String, name: String) = new NamedCrestLink[T](href, name)
@@ -82,15 +83,9 @@ object Models {
 	                  constellations: List[UnImplementedCrestLink],
 	                  marketSellOrders: CrestLink[MarketOrders]) extends CrestContainer
 
-	object ItemTypes {
-
-		case class Item(href: UnImplementedCrestLink, name: String)
-
-	}
-
 	case class ItemTypes(totalCount_str: String,
 	                     pageCount: Double,
-	                     items: List[ItemTypes.Item],
+	                     items: List[UnImplementedNamedCrestLink],
 	                     next: Option[CrestLink[ItemTypes]],
 	                     totalCount: Double,
 	                     pageCount_str: String,
@@ -98,11 +93,22 @@ object Models {
 
 	object MarketOrders {
 
+		/**
+		 * A reference to an item type.
+		 * @param id_str String of the id
+		 * @param href The link is not implemented yet in the EVE CREST.
+		 * @param id The id
+		 * @param name The name of the itemtype.
+		 */
 		case class Reference(id_str: String,
-		                     href: UnImplementedCrestLink,
+		                     href: String,
 		                     id: Double,
 		                     name: String)
 
+		/**
+		 *
+		 * @param href The link has not been implemented yet in EVE CREST.
+		 */
 		case class Item(volume_str: String,
 		                buy: Boolean,
 		                issued: String,
@@ -111,7 +117,7 @@ object Models {
 		                minVolume: Double,
 		                volume: Double,
 		                range: String,
-		                href: UnImplementedCrestLink,
+		                href: String,
 		                duration_str: String,
 		                location: Reference,
 		                duration: Double,

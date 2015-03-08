@@ -1,7 +1,7 @@
 package eu.calavoow.app.api
 
 import com.typesafe.scalalogging.LazyLogging
-import eu.calavoow.app.api.Models.{ItemTypes, MarketOrders, Root}
+import eu.calavoow.app.api.Models._
 import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
@@ -34,7 +34,7 @@ object Market extends LazyLogging {
 
 		// Get the itemType url.
 		val itemTypes = getAllItemTypes(auth)
-		val itemTypeLink = itemTypes.find(_.name == itemTypeName).map(_.href.href)
+		val itemTypeLink = itemTypes.find(_.name == itemTypeName).map(_.href)
 
 		for(
 			regionInst ← region;
@@ -98,13 +98,13 @@ object Market extends LazyLogging {
 		(weightedPrice(buyOrdered), weightedPrice(sellOrdered))
 	}
 
-	def getAllItemTypes(auth: String) : List[ItemTypes.Item] = {
+	def getAllItemTypes(auth: String) : List[UnImplementedNamedCrestLink] = {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
 		val itemTypesRoot = root.itemTypes.followLink(oAuth)
 
 		// Iterate trough all itemTypes pages and add them to the itemTypes list.
-		val itemTypes = mutable.ListBuffer[ItemTypes.Item]()
+		val itemTypes = mutable.ListBuffer[UnImplementedNamedCrestLink]()
 		itemTypes ++= itemTypesRoot.items
 		var currentItemTypes = itemTypesRoot
 		while(currentItemTypes.next.isDefined) {

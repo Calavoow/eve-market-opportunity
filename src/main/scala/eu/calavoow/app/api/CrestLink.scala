@@ -19,6 +19,7 @@ object CrestLink {
 	 */
 	object CrestProtocol extends DefaultJsonProtocol {
 		implicit val unImplementedFormat: JsonFormat[UnImplementedCrestLink] = jsonFormat1(UnImplementedCrestLink)
+		implicit val unImplementedNamedFormat: JsonFormat[UnImplementedNamedCrestLink] = jsonFormat2(UnImplementedNamedCrestLink)
 
 		implicit val rootFormat: JsonFormat[Root] = lazyFormat(jsonFormat22(Root.apply))
 		implicit val rootMotdFormat: JsonFormat[Root.Motd] = jsonFormat3(Root.Motd)
@@ -35,7 +36,6 @@ object CrestLink {
 
 		implicit val itemTypesFormat: JsonFormat[ItemTypes] = lazyFormat(jsonFormat7(ItemTypes.apply))
 		implicit val itemTypesCrestLinkFormat: JsonFormat[CrestLink[ItemTypes]] = jsonFormat(CrestLink[ItemTypes] _, "href")
-		implicit val itemTypesItemFormat: JsonFormat[ItemTypes.Item] = jsonFormat2(ItemTypes.Item)
 
 		implicit val marketOrdersFormat: JsonFormat[MarketOrders] = lazyFormat(jsonFormat5(MarketOrders.apply))
 		implicit val marketOrdersCrestLinkFormat: JsonFormat[CrestLink[MarketOrders]] = jsonFormat(CrestLink[MarketOrders] _, "href")
@@ -96,6 +96,9 @@ case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
 			case timeout: SocketTimeoutException ⇒
 				logger.warn(s"Timeout while requesting from EVE CREST: $timeout")
 				new Control {}.halt(504, "Eve CREST API did not respond on time.")
+			case deserializationE: DeserializationException ⇒
+				logger.error(deserializationE.toString)
+				throw deserializationE
 		}
 	}
 }

@@ -1,5 +1,6 @@
 package eu.calavoow.app
 
+import api.Models.MarketOrders
 import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.api.Login.LoginParams
 import eu.calavoow.app.api.{Login, Market}
@@ -18,9 +19,9 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 		<html>
 			<head>
 				<title>Market Mapper Homepage</title>
-				<script src="js/d3.v3.min.js" charset="utf-8"></script>
-				<script src="js/cookie.js"></script>
-				<script src="js/home.js"></script>
+				<script type="text/javascript" src="js/d3.v3.min.js" charset="utf-8"></script>
+				<script type="text/javascript" src="js/cookie.js"></script>
+				<script type="text/javascript" src="js/home.js"></script>
 			</head>
 			<body>
 				<h1 style="display:none">
@@ -33,9 +34,9 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 	get("/login") {
 		<html>
 			<head>
-				<script src="js/d3.v3.min.js" charset="utf-8"></script>
-				<script src="js/cookie.js"></script>
-				<script src="js/login.js"></script>
+				<script type="text/javascript" src="js/d3.v3.min.js" charset="utf-8"></script>
+				<script type="text/javascript" src="js/cookie.js"></script>
+				<script type="text/javascript" src="js/login.js"></script>
 			</head>
 			<body>
 				Please wait, processing login information.
@@ -91,40 +92,69 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 	get("/market") {
 		val authCode = cookies.get("access_token")
 
-		authCode match {
+		val pageContent = authCode match {
 			case Some(auth) ⇒
 				val regions = Market.getRegions(auth)
-				val regionsList = for(region ← regions) yield {
+				for(region ← regions) yield {
 					<li><a href={s"market/${region.name}"}>{region.name}</a></li>
 				}
-				<html>
-					<body>
-						<ul>
-							{regionsList}
-						</ul>
-					</body>
-				</html>
-			case None ⇒ halt(401, "No authentication code provided.")
+			case None ⇒ "No authentication code provided."
 		}
+		<html>
+			<head>
+				<script type="text/javascript" src="js/d3.v3.min.js" charset="utf-8"></script>
+				<script type="text/javascript" src="js/cookie.js"></script>
+				<script type="text/javascript" src="js/market.js"></script>
+			</head>
+			<body>
+				<ul>
+					{pageContent}
+				</ul>
+			</body>
+		</html>
 	}
 
 	get("/market/:region") {
 		val authCode = cookies.get("access_token")
 
-		authCode match {
+		val pageContent = authCode match {
 			case Some(auth) ⇒
 				val regionName = params("region")
-				val marketInfo = Market.getMarketOrders(regionName, "Nocxium", auth)
+				Market.getMarketOrders(regionName, "Nocxium", auth)
 					.getOrElse(halt(500, "Something went wrong fetching market orders"))
-				<html>
-					<body>
-						{
-						marketInfo
-						}
-					</body>
-				</html>
-			case None ⇒ halt(401, "No authentication code provided.")
+
+			case None ⇒ "No authentication code provided."
 		}
+		<html>
+			<head>
+				<script type="text/javascript" src="js/d3.v3.min.js" charset="utf-8"></script>
+				<script type="text/javascript" src="js/cookie.js"></script>
+				<script type="text/javascript" src="js/market.js"></script>
+			</head>
+			<body>
+				{pageContent}
+			</body>
+		</html>
+	}
+
+	get("/marketData/:region") {
+		contentType = formats("json")
+
+		import eu.calavoow.app.api.CrestLink.CrestProtocol._
+		case class Output(buyOrders: List[MarketOrders.Item], sellOrders: List[MarketOrders.Item])
+		implicit val outputFormat: JsonFormat[Output] = jsonFormat2(Output)
+
+		val authCode = cookies.get("access_token")
+
+		val data = authCode match {
+			case Some(auth) ⇒
+				val regionName = params("region")
+				Market.getMarketOrders(regionName, "Nocxium", auth)
+		.getOrElse(halt(500, "Something went wrong fetching market orders"))
+
+			case None ⇒ halt(401, "The authentication token is not set.")
+		}
+		Output(data._1, data._2).toJson.compactPrint
 	}
 
 	def handleNoAuth : PartialFunction[Option[LoginParams], Unit] = {

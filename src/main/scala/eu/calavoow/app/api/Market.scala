@@ -3,12 +3,11 @@ package eu.calavoow.app.api
 import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.api.Models._
 
-import scala.collection.mutable
 import scalacache._
 import memoization._
-import scalacache.guava.GuavaCache
-import scala.language.postfixOps
 import scala.concurrent.duration._
+import scala.language.postfixOps
+import scalacache.guava.GuavaCache
 
 object Market extends LazyLogging {
 	implicit val scalaCache = ScalaCache(GuavaCache())
@@ -16,7 +15,9 @@ object Market extends LazyLogging {
 	def getRegions(@cacheKeyExclude auth: String) : List[NamedCrestLink[Region]]  = memoize {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
+		logger.trace(s"Root fetched: $root")
 		val regions = root.regions.followLink(oAuth)
+		logger.trace(s"Regions fetched: $regions")
 
 		regions.items
 	}
@@ -24,12 +25,12 @@ object Market extends LazyLogging {
 	def getMarketOrders(regionName: String,
 	                    itemTypeName: String,
 	                    @cacheKeyExclude auth: String
-		                   ): Option[(MarketOrders, MarketOrders)] = memoize(5 minutes) {
+		                   ): Option[(List[MarketOrders.Item], List[MarketOrders.Item])] = memoize(5 minutes) {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
 		val regions = root.regions.followLink(oAuth)
 		logger.debug(regions.toString)
-		val region = regions.items.find(_.name == regionName).map(_.link.followLink(auth))
+		val region = regions.items.find(_.name == regionName).map(_.link.followLink(oAuth))
 		logger.debug(region.toString)
 
 		// Get the itemType url.
@@ -40,8 +41,10 @@ object Market extends LazyLogging {
 			regionInst ← region;
 			itemLink ← itemTypeLink
 		) yield {
-			(regionInst.marketBuyOrders.followLink(oAuth, Map("type" → itemLink)),
-				regionInst.marketSellOrders.followLink(oAuth, Map("type" → itemLink)))
+			// Get all pages of market orders.
+			val buys = regionInst.marketBuyOrders.followLink(oAuth, Map("type" → itemLink)).authedIterable(oAuth).map(_.items).flatten.toList
+			val sells = regionInst.marketSellOrders.followLink(oAuth, Map("type" → itemLink)).authedIterable(oAuth).map(_.items).flatten.toList
+			(buys,sells)
 		}
 	}
 
@@ -71,7 +74,7 @@ object Market extends LazyLogging {
 
 		// Highest sell orders, that fulfill the required volume
 		volumeFulfilled = 0
-		val sellOrdered = sellOrders.sortBy(_.price)(Ordering.Double.reverse).takeWhile((order) ⇒ {
+		val sellOrdered = sellOrders.sortBy(_.price)(Ordering.Long.reverse).takeWhile((order) ⇒ {
 			if(volumeFulfilled > volume) {
 				false
 			} else {
@@ -103,14 +106,6 @@ object Market extends LazyLogging {
 		val root = Root.fetch(oAuth)
 		val itemTypesRoot = root.itemTypes.followLink(oAuth)
 
-		// Iterate trough all itemTypes pages and add them to the itemTypes list.
-		val itemTypes = mutable.ListBuffer[UnImplementedNamedCrestLink]()
-		itemTypes ++= itemTypesRoot.items
-		var currentItemTypes = itemTypesRoot
-		while(currentItemTypes.next.isDefined) {
-			currentItemTypes = currentItemTypes.next.get.followLink(oAuth)
-			itemTypes ++= currentItemTypes.items
-		}
-		itemTypes.toList // Return the immutable list.
+		itemTypesRoot.authedIterable(Some(auth)).map(_.items).flatten.toList
 	}
 }

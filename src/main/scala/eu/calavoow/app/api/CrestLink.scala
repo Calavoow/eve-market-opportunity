@@ -3,9 +3,8 @@ package eu.calavoow.app.api
 import java.net.SocketTimeoutException
 
 import com.typesafe.scalalogging.LazyLogging
-import eu.calavoow.app.api.Models.{NamedCrestLink, _}
+import eu.calavoow.app.api.Models._
 import org.scalatra.Control
-import org.slf4j.LoggerFactory
 import spray.json._
 
 import scalaj.http.{Http, HttpRequest}
@@ -14,8 +13,6 @@ object CrestLink {
 
 	/**
 	 * Defines the JSON deserialisation protocols related to the Crest classes.
-	 *
-	 * Imported in CrestLink.followLink.
 	 */
 	object CrestProtocol extends DefaultJsonProtocol {
 		implicit val unImplementedFormat: JsonFormat[UnImplementedCrestLink] = jsonFormat1(UnImplementedCrestLink)
@@ -37,7 +34,7 @@ object CrestLink {
 		implicit val itemTypesFormat: JsonFormat[ItemTypes] = lazyFormat(jsonFormat7(ItemTypes.apply))
 		implicit val itemTypesCrestLinkFormat: JsonFormat[CrestLink[ItemTypes]] = jsonFormat(CrestLink[ItemTypes] _, "href")
 
-		implicit val marketOrdersFormat: JsonFormat[MarketOrders] = lazyFormat(jsonFormat5(MarketOrders.apply))
+		implicit val marketOrdersFormat: JsonFormat[MarketOrders] = lazyFormat(jsonFormat7(MarketOrders.apply))
 		implicit val marketOrdersCrestLinkFormat: JsonFormat[CrestLink[MarketOrders]] = jsonFormat(CrestLink[MarketOrders] _, "href")
 		implicit val marketOrdersLocationFormat: JsonFormat[MarketOrders.Reference] = jsonFormat4(MarketOrders.Reference)
 		implicit val MarketOrdersItemsFormat: JsonFormat[MarketOrders.Item] = jsonFormat17(MarketOrders.Item)
@@ -57,7 +54,7 @@ case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
 	 * @param auth The authentication key.
 	 * @return The constructed Crest class.
 	 */
-	def followLink(auth: String): T = followLink(Some(auth))
+	def followLink(auth: Option[String]): T = followLink(auth, Map())
 
 	/**
 	 * Followlink executes a request to the CREST API to instantiate the linked Crest class T.
@@ -85,7 +82,8 @@ case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
 		try {
 			val response = finalRequest.asString
 			if (response.isError) {
-				new Control {}.halt(response.code, response.body)
+				logger.error(s"Error following link: ${response.code}\n${response.body}")
+				new Control {}.halt(502, "EVE CREST returned an error")
 			}
 
 			//json to crest object using implicit protocols.

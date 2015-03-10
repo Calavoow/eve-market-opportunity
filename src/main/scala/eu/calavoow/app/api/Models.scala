@@ -3,17 +3,23 @@ package eu.calavoow.app.api
 import spray.json.JsonFormat
 
 object Models {
+
 	/**
 	 * A CrestContainer is a class that contains links to followup pages and the information on the current crest page.
 	 */
 	sealed trait CrestContainer
+
 	trait AuthedIterable[T <: AuthedIterable[T]] {
 		def next: Option[CrestLink[T]]
-		def authedIterable(auth: Option[String]) : Iterable[T] = authedIterable(auth, Map())
-		def authedIterable(auth: Option[String], params: Map[String,String]) : Iterable[T] = new Iterable[T] {
+
+		def authedIterable(auth: Option[String]): Iterable[T] = authedIterable(auth, Map())
+
+		def authedIterable(auth: Option[String], params: Map[String, String]): Iterable[T] = new Iterable[T] {
 			override def iterator = new Iterator[T] {
-				var self : Option[T] = Some(AuthedIterable.this.asInstanceOf[T])
+				var self: Option[T] = Some(AuthedIterable.this.asInstanceOf[T])
+
 				override def hasNext = self.isDefined
+
 				override def next() = {
 					val res = self.get
 					self = res.next.map(_.followLink(auth, params))
@@ -28,12 +34,8 @@ object Models {
 	case class NamedCrestLink[T: JsonFormat](href: String, name: String) {
 		lazy val link = CrestLink[T](href)
 	}
-	case class UnImplementedNamedCrestLink(href: String, name: String) extends CrestContainer
 
-//	object NamedCrestLink {
-//		def apply[T: JsonFormat](href: String, name: String) = new NamedCrestLink[T](href, name)
-//	}
-//	class NamedCrestLink[T: JsonFormat](override val href: String, val name: String) extends CrestLink[T](href)
+	case class UnImplementedNamedCrestLink(href: String, name: String) extends CrestContainer
 
 	object Root {
 		def fetch(auth: Option[String]): Root = {
@@ -149,8 +151,8 @@ object Models {
 	                        pageCount: Int,
 	                        pageCount_str: String,
 	                        totalCount: Int,
-		                       next: Option[CrestLink[MarketOrders]],
-		                       previous: Option[CrestLink[MarketOrders]]) extends CrestContainer with AuthedIterable[MarketOrders]
+	                        next: Option[CrestLink[MarketOrders]],
+	                        previous: Option[CrestLink[MarketOrders]]) extends CrestContainer with AuthedIterable[MarketOrders]
 
 
 }

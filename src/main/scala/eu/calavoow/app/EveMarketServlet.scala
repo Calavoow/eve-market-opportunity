@@ -2,14 +2,10 @@ package eu.calavoow.app
 
 import api.Models.MarketOrders
 import com.typesafe.scalalogging.LazyLogging
-import eu.calavoow.app.api.Login.LoginParams
 import eu.calavoow.app.api.{Login, Market}
 import eu.calavoow.app.config.Config
 import org.scalatra._
-import spray.json.DefaultJsonProtocol._
 import spray.json._
-
-import scala.util.{Failure, Success, Try}
 
 class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with LazyLogging {
 
@@ -25,7 +21,7 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 			</head>
 			<body>
 				<h1 style="display:none">
-					<a id="login" data-clientid={config.clientId} href="">Please login</a>
+					<a id="login" data-clientid={config.clientId}>Please login</a>
 				</h1>
 			</body>
 		</html>
@@ -51,7 +47,7 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 		contentType = formats("json")
 
 		val authToken = cookies.get("auth_token")
-		if(authToken.isDefined) halt(400, "User already has a valid authentication token.")
+		if( authToken.isDefined ) halt(400, "User already has a valid authentication token.")
 
 		val oResult = request.body match {
 			case "" ⇒
@@ -72,7 +68,7 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 		contentType = formats("json")
 
 		val authToken = cookies.get("access_token")
-		if(authToken.isDefined) halt(400, "User already has a valid authentication token.")
+		if( authToken.isDefined ) halt(400, "User already has a valid authentication token.")
 
 		val oResult = request.body match {
 			case "" ⇒
@@ -95,8 +91,12 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 		val pageContent = authCode match {
 			case Some(auth) ⇒
 				val regions = Market.getRegions(auth)
-				for(region ← regions) yield {
-					<li><a href={s"market/${region.name}"}>{region.name}</a></li>
+				for ( region ← regions ) yield {
+					<li>
+						<a href={s"market/${region.name}"}>
+							{region.name}
+						</a>
+					</li>
 				}
 			case None ⇒ "No authentication code provided."
 		}
@@ -150,18 +150,10 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 			case Some(auth) ⇒
 				val regionName = params("region")
 				Market.getMarketOrders(regionName, "Nocxium", auth)
-		.getOrElse(halt(500, "Something went wrong fetching market orders"))
+					.getOrElse(halt(500, "Something went wrong fetching market orders"))
 
 			case None ⇒ halt(401, "The authentication token is not set.")
 		}
 		Output(data._1, data._2).toJson.compactPrint
 	}
-
-	def handleNoAuth : PartialFunction[Option[LoginParams], Unit] = {
-		case Some(LoginParams(None,_)) ⇒
-			halt(401, "The authentication token is not set.")
-		case None ⇒
-			halt(401, "Your session has expired")
-	}
-
 }

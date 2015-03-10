@@ -12,7 +12,7 @@ import scalacache.guava.GuavaCache
 object Market extends LazyLogging {
 	implicit val scalaCache = ScalaCache(GuavaCache())
 
-	def getRegions(@cacheKeyExclude auth: String) : List[NamedCrestLink[Region]]  = memoize {
+	def getRegions(@cacheKeyExclude auth: String): List[NamedCrestLink[Region]] = memoize {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
 		logger.trace(s"Root fetched: $root")
@@ -37,20 +37,20 @@ object Market extends LazyLogging {
 		val itemTypes = getAllItemTypes(auth)
 		val itemTypeLink = itemTypes.find(_.name == itemTypeName).map(_.href)
 
-		for(
+		for (
 			regionInst ← region;
 			itemLink ← itemTypeLink
 		) yield {
 			// Get all pages of market orders.
 			val buys = regionInst.marketBuyOrders.followLink(oAuth, Map("type" → itemLink)).authedIterable(oAuth).map(_.items).flatten.toList
 			val sells = regionInst.marketSellOrders.followLink(oAuth, Map("type" → itemLink)).authedIterable(oAuth).map(_.items).flatten.toList
-			(buys,sells)
+			(buys, sells)
 		}
 	}
 
 	def dailyTurnOver(buyOrders: List[MarketOrders.Item], sellOrders: List[MarketOrders.Item], dailyVolume: Double, tax: Double) = {
 		val (avgBuy, avgSell) = avgPrice(buyOrders, sellOrders, dailyVolume)
-		dailyVolume*(avgBuy*(1-tax) - avgSell*(1+tax))
+		dailyVolume * (avgBuy * (1 - tax) - avgSell * (1 + tax))
 	}
 
 	/**
@@ -60,11 +60,11 @@ object Market extends LazyLogging {
 	 * @param volume The volume which has to be bought to calculate the average.
 	 * @return
 	 */
-	def avgPrice(buyOrders: List[MarketOrders.Item], sellOrders: List[MarketOrders.Item], volume: Double) : (Double, Double) = {
+	def avgPrice(buyOrders: List[MarketOrders.Item], sellOrders: List[MarketOrders.Item], volume: Double): (Double, Double) = {
 		// Lowest buy orders reaching volume
 		var volumeFulfilled = 0.0d
 		val buyOrdered = buyOrders.sortBy(_.price).takeWhile((order) ⇒ {
-			if(volumeFulfilled > volume) {
+			if( volumeFulfilled > volume ) {
 				false
 			} else {
 				volumeFulfilled += order.volume
@@ -75,7 +75,7 @@ object Market extends LazyLogging {
 		// Highest sell orders, that fulfill the required volume
 		volumeFulfilled = 0
 		val sellOrdered = sellOrders.sortBy(_.price)(Ordering.Long.reverse).takeWhile((order) ⇒ {
-			if(volumeFulfilled > volume) {
+			if( volumeFulfilled > volume ) {
 				false
 			} else {
 				volumeFulfilled += order.volume
@@ -88,7 +88,7 @@ object Market extends LazyLogging {
 		 * @param buyOrder A sorted list of market orders, ordered by best price first.
 		 * @return The price to buy the volume in items
 		 */
-		def weightedPrice(buyOrder: List[MarketOrders.Item]) : Double = {
+		def weightedPrice(buyOrder: List[MarketOrders.Item]): Double = {
 			var volumeLeft = volume
 			buyOrder.foldLeft(0.0d)((accum, buyOrder) ⇒ {
 				val volume = Math.min(buyOrder.volume, volumeLeft)
@@ -101,7 +101,7 @@ object Market extends LazyLogging {
 		(weightedPrice(buyOrdered), weightedPrice(sellOrdered))
 	}
 
-	def getAllItemTypes(@cacheKeyExclude auth: String) : List[UnImplementedNamedCrestLink] = memoize(2 days) {
+	def getAllItemTypes(@cacheKeyExclude auth: String): List[UnImplementedNamedCrestLink] = memoize(2 days) {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
 		val itemTypesRoot = root.itemTypes.followLink(oAuth)

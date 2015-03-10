@@ -22,19 +22,21 @@ object Login extends LazyLogging {
 	}
 
 	def exchangeAccessCode(accessCode: String) = exchangeCode(accessCode, "code", "authorization_code")
+
 	def exchangeRefreshToken(token: String) = exchangeCode(token, "refresh_token", "refresh_token")
+
 	def exchangeCode(accessCode: String, codeParam: String, grantType: String) = {
 		val tokenEndpoint = "https://login.eveonline.com/oauth/token"
 		val config = Config.readApiConfig
 		val request = Http(tokenEndpoint)
 			.postForm(Seq("grant_type" → grantType, codeParam → accessCode))
-			.auth(config.clientId,config.secretKey)
-			.timeout(5000,5000)
+			.auth(config.clientId, config.secretKey)
+			.timeout(5000, 5000)
 		logger.trace(s"AccessCode Request, headers : ${request.headers}\n params ${request.params}")
 
 		try {
 			val result = request.asString
-			if(result.isSuccess) {
+			if( result.isSuccess ) {
 				Some(result.body)
 			} else {
 				logger.info(s"Exchanging the EVE access code went wrong: $result")
@@ -46,22 +48,4 @@ object Login extends LazyLogging {
 				None
 		}
 	}
-
-	def refreshToken(refrToken: String) : String = {
-		null
-	}
-
-	object LoginParams {
-		def unapply(params: Map[String, String]) : Option[LoginParams] = {
-			val token = params.get("access_token")
-			val refreshToken = params.get("refresh_token")
-//			val expiresIn = params.get("expires_in").map(_.toInt)
-			for(y ← refreshToken) yield {
-//				val date = new Date(System.currentTimeMillis() + z * 1000)
-				LoginParams(token,y)
-			}
-		}
-	}
-
-	case class LoginParams(accessToken: Option[String], refreshToken: String)
 }

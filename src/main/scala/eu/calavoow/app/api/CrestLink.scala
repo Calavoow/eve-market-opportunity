@@ -81,7 +81,7 @@ case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
 
 		try {
 			val response = finalRequest.asString
-			if (response.isError) {
+			if( response.isError ) {
 				logger.error(s"Error following link: ${response.code}\n${response.body}")
 				new Control {}.halt(502, "EVE CREST returned an error")
 			}

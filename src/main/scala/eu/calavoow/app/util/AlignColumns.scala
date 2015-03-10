@@ -14,10 +14,10 @@ object AlignColumns {
 		val lens = columns.map(l => l.map(_.length)).toList
 		var maxlens = Map[Int, Int]() withDefaultValue 0
 		lens foreach (l =>
-			for (i <- 0 until l.length) {
+			for ( i <- 0 until l.length ) {
 				maxlens += i -> l(i).max(maxlens(i))
 			}
-		)
+			)
 
 		val padded = columns map (_.zipWithIndex.map { case (s, i) => pad(s, maxlens(i), "left") + " "})
 		padded map (_.reduceLeft(_ + _))

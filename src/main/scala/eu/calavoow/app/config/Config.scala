@@ -10,10 +10,11 @@ import scala.io.Source
 
 object Config {
 	val logger = LoggerFactory.getLogger(getClass)
+
 	case class CrestAuthentication(clientId: String, secretKey: String)
 
 	private implicit class RichConfig(val underlying: com.typesafe.config.Config) {
-		def getOptional[T](path: String, f: (String ⇒ T)) = if(underlying.hasPath(path)) {
+		def getOptional[T](path: String, f: (String ⇒ T)) = if( underlying.hasPath(path) ) {
 			Some(f(path))
 		} else {
 			None
@@ -24,7 +25,7 @@ object Config {
 	 * Read the CREST API Configuration using the default path.
 	 * @return
 	 */
-	lazy val readApiConfig : CrestAuthentication = {
+	lazy val readApiConfig: CrestAuthentication = {
 		Option(getClass.getResource("/api.conf"))
 			.map(Source.fromURL)
 			.flatMap {
@@ -43,7 +44,7 @@ object Config {
 		}
 	}
 
-	def readApiConfig(location: Reader) : Option[CrestAuthentication] = {
+	def readApiConfig(location: Reader): Option[CrestAuthentication] = {
 		val config = ConfigFactory.parseReader(location)
 		val keyOption = config.getOptional("api.clientId", config.getString)
 		keyOption match {
@@ -57,6 +58,8 @@ object Config {
 				logger.error("You did not provide a valid secretKey in the api.conf")
 			case _ ⇒
 		}
-		for(key ← keyOption; verif ← verifCodeOption) yield { CrestAuthentication(key, verif) }
+		for ( key ← keyOption; verif ← verifCodeOption ) yield {
+			CrestAuthentication(key, verif)
+		}
 	}
 }

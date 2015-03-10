@@ -32,7 +32,7 @@ window.onload = function() {
 							var expiryDate = new Date(((new Date()).getTime()) + data['expires_in']*1000);
 							docCookies.setItem('access_token', data['access_token'], expiryDate);
 							// The refresh token (presumably) has no expiry date.
-							docCookies.setItem('refresh_token', data['access_token'], Infinity);
+							docCookies.setItem('refresh_token', data['refresh_token'], Infinity);
 							docCookies.setItem('token_type', data['token_type'], expiryDate);
 							window.location.replace("/");
 						} else {

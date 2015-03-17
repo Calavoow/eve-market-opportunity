@@ -2,8 +2,9 @@ package eu.calavoow.app
 
 import api.Models.MarketOrders
 import com.typesafe.scalalogging.LazyLogging
-import eu.calavoow.app.api.{Login, Market}
+import eu.calavoow.app.api.Login
 import eu.calavoow.app.config.Config
+import market.Market
 import org.scalatra._
 import spray.json._
 
@@ -91,10 +92,10 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 		val pageContent = authCode match {
 			case Some(auth) ⇒
 				val regions = Market.getRegions(auth)
-				for ( region ← regions ) yield {
+				for ( region ← regions.keys ) yield {
 					<li>
-						<a href={s"market/${region.name}"}>
-							{region.name}
+						<a href={s"market/$region"}>
+							{region}
 						</a>
 					</li>
 				}
@@ -139,21 +140,32 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 
 	get("/marketData/:region") {
 		contentType = formats("json")
+		val oTax = params.get("tax")
 
 		import eu.calavoow.app.api.CrestLink.CrestProtocol._
-		case class Output(buyOrders: List[MarketOrders.Item], sellOrders: List[MarketOrders.Item])
-		implicit val outputFormat: JsonFormat[Output] = jsonFormat2(Output)
+		case class CoreMarketInfo(avgBuy: Double, avgSell: Double, dailyTurnOver: Option[Double])
+		implicit val outputFormat: JsonFormat[CoreMarketInfo] = jsonFormat3(CoreMarketInfo)
 
 		val authCode = cookies.get("access_token")
 
-		val data = authCode match {
+		authCode match {
 			case Some(auth) ⇒
 				val regionName = params("region")
-				Market.getMarketOrders(regionName, "Nocxium", auth)
+				val (buyOrders, sellOrders) = Market.getMarketOrders(regionName, "Nocxium", auth)
 					.getOrElse(halt(500, "Something went wrong fetching market orders"))
+				val marketHistory = Market.getMarketHistory(regionName, "Nocxium", auth)
+					.getOrElse(halt(500, "Something went wrong fetching market history"))
 
+				logger.trace(s"Market history head: ${marketHistory.items.headOption}")
+				// Assuming |items| > 0
+				val itemVolume = marketHistory.items.headOption.getOrElse(halt(500, "Market history was empty")).volume
+				logger.trace(s"Item volume: $itemVolume")
+				val item10Vol = (itemVolume / 10.0).ceil.toLong
+				val (avgBuy, avgSell) = Market.avgPrice(buyOrders, sellOrders, item10Vol)
+				logger.debug(s"Average buy/sell price: $avgBuy/$avgSell")
+				val dailyTurnOver = oTax.map { tax ⇒ Market.turnOver(avgBuy, avgSell, item10Vol, tax.toDouble) }
+				Ok(CoreMarketInfo(avgBuy, avgSell, dailyTurnOver).toJson.compactPrint)
 			case None ⇒ halt(401, "The authentication token is not set.")
 		}
-		Output(data._1, data._2).toJson.compactPrint
 	}
 }

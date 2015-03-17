@@ -1,5 +1,7 @@
 package eu.calavoow.app.api
 
+import java.util.Date
+
 import spray.json.JsonFormat
 
 object Models {
@@ -41,7 +43,7 @@ object Models {
 		def fetch(auth: Option[String]): Root = {
 			import CrestLink.CrestProtocol._
 			// The only "static" CREST URL.
-			val endpoint = "https://crest.eveonline.com/"
+			val endpoint = "https://crest-tq.eveonline.com/"
 			CrestLink[Root](endpoint).followLink(auth)
 		}
 
@@ -129,7 +131,7 @@ object Models {
 		case class Item(volume_str: String,
 		                buy: Boolean,
 		                issued: String,
-		                price: Long,
+		                price: Double,
 		                volumeEntered: Long,
 		                minVolume: Long,
 		                volume: Long,
@@ -153,6 +155,28 @@ object Models {
 	                        totalCount: Int,
 	                        next: Option[CrestLink[MarketOrders]],
 	                        previous: Option[CrestLink[MarketOrders]]) extends CrestContainer with AuthedIterable[MarketOrders]
+
+	object MarketHistory {
+		case class Item(volume_str: String,
+			                orderCount: Long,
+			                lowPrice: Double,
+			                highPrice: Double,
+			                avgPrice: Double,
+			                volume: Long,
+			                orderCount_str: String,
+			                date: String)
+
+		def fetch(marketID: Int, typeID: Int, auth: Option[String]) = {
+			import CrestLink.CrestProtocol._
+			CrestLink[MarketHistory](s"https://crest-tq.eveonline.com/market/$marketID/types/$typeID/history/").followLink(auth)
+		}
+	}
+
+	case class MarketHistory(totalCount_str: String,
+		                         items: List[MarketHistory.Item],
+		                         pageCount: Int,
+		                         pageCount_str: String,
+		                         totalCount: Int) extends CrestContainer
 
 
 }

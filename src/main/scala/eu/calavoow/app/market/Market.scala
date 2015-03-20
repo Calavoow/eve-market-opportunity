@@ -80,14 +80,22 @@ object Market extends LazyLogging {
 
 	/**
 	 * The turnover for the given avg buy and avg sell.
+	 *
+	 * Cost per bought item
+	 * avgBuy * (1 + margin)
+	 *
+	 * Profit per sold item
+	 * avgSell * (1 - margin - tax)
+	 *
 	 * @param avgBuy The average buy price to calculate with
 	 * @param avgSell Average sell price
-	 * @param volume The volume of the time period.
-	 * @param tax Tax deducted from profits
-	 * @return The flip margin for items.
+	 * @param volume The volume of the time period
+	 * @param margin The broker order tax.
+	 * @param tax Tax deducted from sell orders
+	 * @return The flip margin for `volume` items.
 	 */
-	def turnOver(avgBuy: Double, avgSell: Double, volume: Long, tax: Double) : Double = {
-		(avgBuy * (1 - tax) - avgSell * (1 + tax)) * volume
+	def turnOver(avgBuy: Double, avgSell: Double, volume: Long, margin: Double, tax: Double) : Double = {
+		(avgSell - avgBuy - margin * (avgSell + avgBuy) + avgSell * tax) * volume
 	}
 
 	/**
@@ -104,12 +112,11 @@ object Market extends LazyLogging {
 		 * @return The price to buy the volume in items
 		 */
 		def weightedPrice(marketOrders: List[MarketOrders.Item], volume: Long): Double = {
+			// Use a stream to lazily calculate up to the required elements.
 			def summedWeightedPrice = marketOrders.toStream.map({ order ⇒
 				// Map to (volume, price)
 				(order.volume, order.price)
-			})
-				// Note: Scanleft apparently does not play well with views.
-				.scanLeft((0L,0L,0.0d))({ case ((_, volumeSum, _), (orderVolume, price)) ⇒
+			}).scanLeft((0L,0L,0.0d))({ case ((_, volumeSum, _), (orderVolume, price)) ⇒
 				logger.debug(s"sum: $volumeSum, for ($orderVolume, $price)")
 				// Change to (volume, running sum of volume, price)
 				(orderVolume, volumeSum + orderVolume, price)

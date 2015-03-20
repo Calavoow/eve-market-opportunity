@@ -141,6 +141,8 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 	get("/marketData/:region") {
 		contentType = formats("json")
 		val oTax = params.get("tax")
+		val oMargin = params.get("margin")
+		val input = for(tax ← oTax; margin ← oMargin) yield (margin.toDouble, tax.toDouble)
 
 		import eu.calavoow.app.api.CrestLink.CrestProtocol._
 		case class CoreMarketInfo(avgBuy: Double, avgSell: Double, dailyTurnOver: Option[Double])
@@ -163,7 +165,10 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 				val item10Vol = (itemVolume / 10.0).ceil.toLong
 				val (avgBuy, avgSell) = Market.avgPrice(buyOrders, sellOrders, item10Vol)
 				logger.debug(s"Average buy/sell price: $avgBuy/$avgSell")
-				val dailyTurnOver = oTax.map { tax ⇒ Market.turnOver(avgBuy, avgSell, item10Vol, tax.toDouble) }
+				// If there is Some input, use it to calculate the daily turnover.
+				val dailyTurnOver = input.map { case (margin, tax) ⇒
+					Market.turnOver(avgBuy, avgSell, item10Vol, margin, tax)
+				}
 				Ok(CoreMarketInfo(avgBuy, avgSell, dailyTurnOver).toJson.compactPrint)
 			case None ⇒ halt(401, "The authentication token is not set.")
 		}

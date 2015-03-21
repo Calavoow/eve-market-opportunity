@@ -145,31 +145,42 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 		val input = for(tax ← oTax; margin ← oMargin) yield (margin.toDouble, tax.toDouble)
 
 		import eu.calavoow.app.api.CrestLink.CrestProtocol._
-		case class CoreMarketInfo(avgBuy: Double, avgSell: Double, dailyTurnOver: Option[Double])
-		implicit val outputFormat: JsonFormat[CoreMarketInfo] = jsonFormat3(CoreMarketInfo)
+		case class CoreMarketInfo(coreItemInfo: Iterable[CoreItemInfo])
+		case class CoreItemInfo(itemType: String, avgBuy: Double, avgSell: Double, dailyTurnOver: Option[Double])
+		implicit val coreItemInfoFormatter: JsonFormat[CoreItemInfo] = jsonFormat4(CoreItemInfo)
+		implicit val outputFormat: JsonFormat[CoreMarketInfo] = jsonFormat1(CoreMarketInfo)
 
 		val authCode = cookies.get("access_token")
 
 		authCode match {
 			case Some(auth) ⇒
 				val regionName = params("region")
-				val (buyOrders, sellOrders) = Market.getMarketOrders(regionName, "Nocxium", auth)
+				val allMarketOrders = Market.getAllMarketOrders(regionName, auth)
 					.getOrElse(halt(500, "Something went wrong fetching market orders"))
-				val marketHistory = Market.getMarketHistory(regionName, "Nocxium", auth)
-					.getOrElse(halt(500, "Something went wrong fetching market history"))
 
-				logger.trace(s"Market history head: ${marketHistory.items.headOption}")
-				// Assuming |items| > 0
-				val itemVolume = marketHistory.items.headOption.getOrElse(halt(500, "Market history was empty")).volume
-				logger.trace(s"Item volume: $itemVolume")
-				val item10Vol = (itemVolume / 10.0).ceil.toLong
-				val (avgBuy, avgSell) = Market.avgPrice(buyOrders, sellOrders, item10Vol)
-				logger.debug(s"Average buy/sell price: $avgBuy/$avgSell")
-				// If there is Some input, use it to calculate the daily turnover.
-				val dailyTurnOver = input.map { case (margin, tax) ⇒
-					Market.turnOver(avgBuy, avgSell, item10Vol, margin, tax)
+				case class MarketData(item: String, buyOrders: List[MarketOrders.Item], sellOrders: List[MarketOrders.Item], volume : Long)
+				val allMarketData = for(marketOrder ← allMarketOrders) yield {
+					val history = Market.getMarketHistory(regionName, marketOrder._1, auth)
+						.getOrElse(halt(500, "Something went wrong fetching market history"))
+					val volume : Long = history.items.headOption.map(_.volume).getOrElse {
+						logger.warn(s"History of item was empty: ${marketOrder._1}")
+						0L
+					}
+					MarketData(marketOrder._1, marketOrder._2._1, marketOrder._2._2, volume)
 				}
-				Ok(CoreMarketInfo(avgBuy, avgSell, dailyTurnOver).toJson.compactPrint)
+
+
+				val itemInfos = for(marketData ← allMarketData) yield {
+					val item10Vol = (marketData.volume / 10.0).ceil.toLong
+					val (avgBuy, avgSell) = Market.avgPrice(marketData.buyOrders, marketData.sellOrders, item10Vol)
+					logger.debug(s"Average buy/sell price: $avgBuy/$avgSell")
+					// If there is Some input, use it to calculate the daily turnover.
+					val dailyTurnOver = input.map { case (margin, tax) ⇒
+						Market.turnOver(avgBuy, avgSell, item10Vol, margin, tax)
+					}
+					CoreItemInfo(marketData.item, avgBuy, avgSell, dailyTurnOver)
+				}
+				Ok(CoreMarketInfo(itemInfos).toJson.compactPrint)
 			case None ⇒ halt(401, "The authentication token is not set.")
 		}
 	}

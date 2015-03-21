@@ -23,6 +23,23 @@ object Market extends LazyLogging {
 		regions.items.map {i ⇒ i.name → i} toMap
 	}
 
+	def getAllMarketOrders(regionName: String,
+		                      @cacheKeyExclude auth: String)
+								: Option[Map[String, (List[MarketOrders.Item], List[MarketOrders.Item])]]
+								= memoize(5 minutes) {
+		val oAuth = Some(auth)
+		val itemTypes = getAllItemTypes(auth)
+		val oRegion = getRegions(auth).get(regionName).map(_.link.followLink(oAuth))
+
+		val res = oRegion.map { region ⇒
+			itemTypes.map { itemType ⇒
+				itemType.name → collectMarketOrders(region, itemType.href, oAuth)
+			}
+		}
+		
+		res.map(_.toMap)
+	}
+
 	def getMarketOrders(regionName: String,
 	                    itemTypeName: String,
 	                    @cacheKeyExclude auth: String
@@ -41,11 +58,15 @@ object Market extends LazyLogging {
 			regionInst ← region;
 			itemLink ← itemTypeLink
 		) yield {
-			// Get all pages of market orders.
-			val buys = regionInst.marketBuyOrders.followLink(oAuth, Map("type" → itemLink)).authedIterable(oAuth).map(_.items).flatten.toList
-			val sells = regionInst.marketSellOrders.followLink(oAuth, Map("type" → itemLink)).authedIterable(oAuth).map(_.items).flatten.toList
-			(buys, sells)
+			collectMarketOrders(regionInst, itemLink, oAuth)
 		}
+	}
+
+	private def collectMarketOrders(region: Region, itemTypeLink: String, oAuth: Option[String]) = {
+		// Get all pages of market orders.
+		val buys = region.marketBuyOrders.followLink(oAuth, Map("type" → itemTypeLink)).authedIterable(oAuth).map(_.items).flatten.toList
+		val sells = region.marketSellOrders.followLink(oAuth, Map("type" → itemTypeLink)).authedIterable(oAuth).map(_.items).flatten.toList
+		(buys, sells)
 	}
 
 	def getMarketHistory(regionName: String,

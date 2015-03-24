@@ -64,12 +64,12 @@ object Market extends LazyLogging {
 			regionInst ← region;
 			itemLink ← itemTypeLink
 		) yield {
-			collectMarketOrders(regionInst, itemLink, oAuth)
+			collectMarketOrders(regionInst, itemLink.link, oAuth)
 		}
 	}
 
 	private def collectMarketOrders(region: Region, itemTypeLink: CrestLink[ItemType], oAuth: Option[String])
-		: (List[MarketOrders], List[MarketOrders]) = {
+		: (List[MarketOrders.Item], List[MarketOrders.Item]) = {
 
 		// Get all pages of market orders.
 //		val buys = region.marketBuyOrders.follow(oAuth, Map("type" → itemTypeLink)).authedIterable(oAuth).map(_.items).flatten.toList
@@ -83,12 +83,28 @@ object Market extends LazyLogging {
 		val tryBuy = Util.retry(3) {
 			region.marketBuyLink(itemTypeLink).tryFollow(oAuth)
 		}
+
 		val trySell = Util.retry(3) {
 			region.marketSellLink(itemTypeLink).tryFollow(oAuth)
 		}
 
-		val allBuy = tryBuy.map(_.authedIterable(oAuth, itemTypeLink).map(_.items).flatten.toList)
-		val allSell = trySell.map(_.authedIterable(oAuth, itemTypeLink).map(_.items).flatten.toList)
+		// Take the first buy order, and collect all following buyorders.
+		// If the first buy order failed, at least log it.
+		val allBuy = tryBuy.transform[List[MarketOrders.Item]]({ marketOrder ⇒
+			Success(marketOrder.authedIterable(itemTypeLink)(oAuth, 3).map(_.items).flatten.toList)
+		}, { throwable ⇒
+			// At least log something went wrong.
+			logger.info(s"Unable to fetch a buy, error msg: ${throwable.getMessage()}")
+			Failure(throwable)
+		}).getOrElse(Nil)
+
+		val allSell = trySell.transform[List[MarketOrders.Item]]({ marketOrder ⇒
+			Success(marketOrder.authedIterable(itemTypeLink)(oAuth, 3).map(_.items).flatten.toList)
+		}, { throwable ⇒
+			// At least log something went wrong.
+			logger.info(s"Unable to fetch a buy, error msg: ${throwable.getMessage()}")
+			Failure(throwable)
+		}).getOrElse(Nil)
 
 		(allBuy, allSell)
 	}

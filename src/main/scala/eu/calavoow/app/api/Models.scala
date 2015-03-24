@@ -16,10 +16,34 @@ object Models {
 	 */
 	sealed trait CrestContainer
 
+	/**
+	 * A trait for the Model classes which adds a method to construct iterables over the CREST.
+	 *
+	 * This way it becomes easy to iterate through the CREST and perform functional operations on the collections.
+	 * For example, one may collect all entries of `x` with a field `.item`:
+	 *
+	 * {{{
+	 * x.authedIterable(oAuth).map(_.items).flatten.toList
+	 * }}}
+	 *
+	 * @tparam T The type of the Model being iterated over.
+	 */
 	trait AuthedIterable[T <: AuthedIterable[T]] {
 		def next: Option[CrestLink[T]]
 
-		def authedIterable(auth: Option[String], retries: Int = 1, params: Map[String, String] = Map.empty): Iterable[T] =
+		def authedIterable(auth: Option[String], retries: Int = 1) : Iterable[T] = paramsIterable(Map.empty)(auth, retries)
+
+		/**
+		 * Construct an iterable with parameters over the given type T, which iterates throught the CREST.
+		 *
+		 * The user should *not* have to use this function. Use `authedIterable` instead.
+		 *
+		 * @param params The parameters to make a crest call with
+		 * @param auth The authentication token
+		 * @param retries The number of retries.
+		 * @return An Iterable over T.
+		 */
+		def paramsIterable(params: Map[String,String] = Map.empty)(auth: Option[String], retries: Int = 1): Iterable[T] =
 			new Iterable[T] {
 				override def iterator = new Iterator[T] {
 					var self: Option[Try[T]] = Some(Success(AuthedIterable.this.asInstanceOf[T]))
@@ -190,20 +214,18 @@ object Models {
 	                        pageCount_str: String,
 	                        totalCount: Int,
 	                        next: Option[CrestLink[MarketOrders]],
-	                        previous: Option[CrestLink[MarketOrders]]) extends CrestContainer {
+	                        previous: Option[CrestLink[MarketOrders]]) extends CrestContainer with AuthedIterable[MarketOrders] {
 		/**
 		 * Construct an iterable through the market orders.
 		 *
 		 * A parameter itemType is required to iterate through the market orders.
 		 *
 		 * TODO: Check if this is the case
-		 * @param auth
 		 * @param itemType
 		 * @return
 		 */
-		def authedIterable(auth: Option[String], itemType: CrestLink[ItemType]) : Iterable[MarketOrders] = {
-			new AuthedIterable[MarketOrders] {}.authedIterable(auth, Map("type" → itemType.href))
-		}
+		def authedIterable(itemType: CrestLink[ItemType]) =
+			this.paramsIterable(Map("type" → itemType.href)) _
 	}
 
 	object MarketHistory {

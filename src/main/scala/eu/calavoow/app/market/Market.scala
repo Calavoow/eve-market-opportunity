@@ -1,12 +1,18 @@
 package eu.calavoow.app.market
 
+import java.util
+
 import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.api.Models._
+import eu.calavoow.app.api.CrestLink
+import eu.calavoow.app.util.Util
+import org.scalatra.Control
 
 import scalacache._
 import memoization._
 import scala.concurrent.duration._
 import scala.language.postfixOps
+import scala.util.{Try,Failure,Success}
 import scalacache.guava.GuavaCache
 import scala.util.matching.Regex
 
@@ -17,7 +23,7 @@ object Market extends LazyLogging {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
 		logger.trace(s"Root fetched: $root")
-		val regions = root.regions.followLink(oAuth)
+		val regions = root.regions.follow(oAuth)
 		logger.trace(s"Regions fetched: $regions")
 
 		regions.items.map {i ⇒ i.name → i} toMap
@@ -29,11 +35,11 @@ object Market extends LazyLogging {
 								= memoize(5 minutes) {
 		val oAuth = Some(auth)
 		val itemTypes = getAllItemTypes(auth)
-		val oRegion = getRegions(auth).get(regionName).map(_.link.followLink(oAuth))
+		val oRegion = getRegions(auth).get(regionName).map(_.link.follow(oAuth))
 
 		val res = oRegion.map { region ⇒
 			itemTypes.map { itemType ⇒
-				itemType.name → collectMarketOrders(region, itemType.href, oAuth)
+				itemType.name → collectMarketOrders(region, itemType.link, oAuth)
 			}
 		}
 		
@@ -47,12 +53,12 @@ object Market extends LazyLogging {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
 
-		val region = getRegions(auth).get(regionName).map(_.link.followLink(oAuth))
+		val region = getRegions(auth).get(regionName).map(_.link.follow(oAuth))
 		logger.debug(region.toString)
 
 		// Get the itemType link.
 		val itemTypes = getAllItemTypes(auth)
-		val itemTypeLink = itemTypes.find(_.name == itemTypeName).map(_.href)
+		val itemTypeLink = itemTypes.find(_.name == itemTypeName)
 
 		for (
 			regionInst ← region;
@@ -62,11 +68,29 @@ object Market extends LazyLogging {
 		}
 	}
 
-	private def collectMarketOrders(region: Region, itemTypeLink: String, oAuth: Option[String]) = {
+	private def collectMarketOrders(region: Region, itemTypeLink: CrestLink[ItemType], oAuth: Option[String])
+		: (List[MarketOrders], List[MarketOrders]) = {
+
 		// Get all pages of market orders.
-		val buys = region.marketBuyOrders.followLink(oAuth, Map("type" → itemTypeLink)).authedIterable(oAuth).map(_.items).flatten.toList
-		val sells = region.marketSellOrders.followLink(oAuth, Map("type" → itemTypeLink)).authedIterable(oAuth).map(_.items).flatten.toList
-		(buys, sells)
+//		val buys = region.marketBuyOrders.follow(oAuth, Map("type" → itemTypeLink)).authedIterable(oAuth).map(_.items).flatten.toList
+
+		val tryFollowMarketBuy : PartialFunction[Throwable, Try[MarketOrders]]= {
+			case _ ⇒ region.marketBuyLink(itemTypeLink).tryFollow(oAuth)
+		}
+		val tryFollowMarketSell : PartialFunction[Throwable, Try[MarketOrders]]= {
+			case _ ⇒ region.marketBuyLink(itemTypeLink).tryFollow(oAuth)
+		}
+		val tryBuy = Util.retry(3) {
+			region.marketBuyLink(itemTypeLink).tryFollow(oAuth)
+		}
+		val trySell = Util.retry(3) {
+			region.marketSellLink(itemTypeLink).tryFollow(oAuth)
+		}
+
+		val allBuy = tryBuy.map(_.authedIterable(oAuth, itemTypeLink).map(_.items).flatten.toList)
+		val allSell = trySell.map(_.authedIterable(oAuth, itemTypeLink).map(_.items).flatten.toList)
+
+		(allBuy, allSell)
 	}
 
 	def getMarketHistory(regionName: String,
@@ -168,10 +192,10 @@ object Market extends LazyLogging {
 		(weightedBuy, weightedSell)
 	}
 
-	def getAllItemTypes(@cacheKeyExclude auth: String): List[UnImplementedNamedCrestLink] = memoize(2 days) {
+	def getAllItemTypes(@cacheKeyExclude auth: String): List[NamedCrestLink[ItemType]] = memoize(2 days) {
 		val oAuth = Some(auth)
 		val root = Root.fetch(oAuth)
-		val itemTypesRoot = root.itemTypes.followLink(oAuth)
+		val itemTypesRoot = root.itemTypes.follow(oAuth)
 
 		itemTypesRoot.authedIterable(Some(auth)).map(_.items).flatten.toList
 	}

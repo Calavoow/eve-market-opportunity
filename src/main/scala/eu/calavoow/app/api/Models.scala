@@ -2,7 +2,12 @@ package eu.calavoow.app.api
 
 import java.util.Date
 
+import eu.calavoow.app.util.Util
 import spray.json.JsonFormat
+
+import scala.util.Try
+
+import scala.util.Success
 
 object Models {
 
@@ -14,25 +19,41 @@ object Models {
 	trait AuthedIterable[T <: AuthedIterable[T]] {
 		def next: Option[CrestLink[T]]
 
-		def authedIterable(auth: Option[String]): Iterable[T] = authedIterable(auth, Map())
+		def authedIterable(auth: Option[String], retries: Int = 1, params: Map[String, String] = Map.empty): Iterable[T] =
+			new Iterable[T] {
+				override def iterator = new Iterator[T] {
+					var self: Option[Try[T]] = Some(Success(AuthedIterable.this.asInstanceOf[T]))
 
-		def authedIterable(auth: Option[String], params: Map[String, String]): Iterable[T] = new Iterable[T] {
-			override def iterator = new Iterator[T] {
-				var self: Option[T] = Some(AuthedIterable.this.asInstanceOf[T])
+					override def hasNext = !(self.isEmpty && self.get.isFailure)
 
-				override def hasNext = self.isDefined
-
-				override def next() = {
-					val res = self.get
-					self = res.next.map(_.followLink(auth, params))
-					res
+					override def next() = {
+						val res = self.get.get
+						self = for(nxt  ← res.next) yield Util.retry(retries) {
+							nxt.tryFollow(auth, params)
+						}
+						res
+					}
 				}
 			}
-		}
 	}
 
 	case class UnImplementedCrestLink(href: String) extends CrestContainer
 
+	/**
+	 * To follow this crest link some construction is required.
+	 *
+	 * See the class methods to construct a normal CrestLink
+	 * @param href The link to follow.
+	 */
+	case class UncompletedCrestLink(href: String) extends CrestContainer
+
+	object NamedCrestLink{
+		implicit class NamedCrestLink2CrestLink[T: JsonFormat](nlink: NamedCrestLink[T]) {
+			def toCrestLink: CrestLink[T] = {
+				nlink.link
+			}
+		}
+	}
 	case class NamedCrestLink[T: JsonFormat](href: String, name: String) {
 		lazy val link = CrestLink[T](href)
 	}
@@ -44,7 +65,7 @@ object Models {
 			import CrestLink.CrestProtocol._
 			// The only "static" CREST URL.
 			val endpoint = "https://crest-tq.eveonline.com/"
-			CrestLink[Root](endpoint).followLink(auth)
+			CrestLink[Root](endpoint).follow(auth)
 		}
 
 		case class Motd(dust: UnImplementedCrestLink,
@@ -97,18 +118,33 @@ object Models {
 	                   totalCount: Int) extends CrestContainer
 
 	case class Region(description: String,
-	                  marketBuyOrders: CrestLink[MarketOrders],
+	                  marketBuyOrders: UncompletedCrestLink,
 	                  name: String,
 	                  constellations: List[UnImplementedCrestLink],
-	                  marketSellOrders: CrestLink[MarketOrders]) extends CrestContainer
+	                  marketSellOrders: UncompletedCrestLink) extends CrestContainer {
+		import CrestLink.CrestProtocol._
+		def marketBuyLink(itemType: CrestLink[ItemType]) : CrestLinkParams[MarketOrders] = {
+			new CrestLinkParams[MarketOrders](marketBuyOrders.href, Map("type" → itemType.href))
+		}
+
+		def marketSellLink(itemType: CrestLink[ItemType]): CrestLinkParams[MarketOrders] = {
+			new CrestLinkParams[MarketOrders](marketSellOrders.href, Map("type" → itemType.href))
+		}
+	}
 
 	case class ItemTypes(totalCount_str: String,
 	                     pageCount: Int,
-	                     items: List[UnImplementedNamedCrestLink],
+	                     items: List[NamedCrestLink[ItemType]],
 	                     next: Option[CrestLink[ItemTypes]],
 	                     totalCount: Int,
 	                     pageCount_str: String,
 	                     previous: Option[CrestLink[ItemTypes]]) extends CrestContainer with AuthedIterable[ItemTypes]
+
+	/**
+	 * TODO: Fill in this stub.
+	 * @param description
+	 */
+	case class ItemType(description: String) extends CrestContainer
 
 	object MarketOrders {
 
@@ -154,7 +190,21 @@ object Models {
 	                        pageCount_str: String,
 	                        totalCount: Int,
 	                        next: Option[CrestLink[MarketOrders]],
-	                        previous: Option[CrestLink[MarketOrders]]) extends CrestContainer with AuthedIterable[MarketOrders]
+	                        previous: Option[CrestLink[MarketOrders]]) extends CrestContainer {
+		/**
+		 * Construct an iterable through the market orders.
+		 *
+		 * A parameter itemType is required to iterate through the market orders.
+		 *
+		 * TODO: Check if this is the case
+		 * @param auth
+		 * @param itemType
+		 * @return
+		 */
+		def authedIterable(auth: Option[String], itemType: CrestLink[ItemType]) : Iterable[MarketOrders] = {
+			new AuthedIterable[MarketOrders] {}.authedIterable(auth, Map("type" → itemType.href))
+		}
+	}
 
 	object MarketHistory {
 		case class Item(volume_str: String,
@@ -168,7 +218,7 @@ object Models {
 
 		def fetch(marketID: Int, typeID: Int, auth: Option[String]) = {
 			import CrestLink.CrestProtocol._
-			CrestLink[MarketHistory](s"https://crest-tq.eveonline.com/market/$marketID/types/$typeID/history/").followLink(auth)
+			CrestLink[MarketHistory](s"https://crest-tq.eveonline.com/market/$marketID/types/$typeID/history/").follow(auth)
 		}
 	}
 

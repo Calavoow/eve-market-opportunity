@@ -2,7 +2,9 @@ package eu.calavoow.app.api
 
 import java.net.SocketTimeoutException
 
+import scala.util.{Try,Failure,Success}
 import com.typesafe.scalalogging.LazyLogging
+import eu.calavoow.app.api.CrestLink.CrestCommunicationException
 import eu.calavoow.app.api.Models._
 import org.scalatra.Control
 import spray.json._
@@ -10,12 +12,14 @@ import spray.json._
 import scalaj.http.{Http, HttpRequest}
 
 object CrestLink {
+	class CrestCommunicationException(msg: String) extends RuntimeException(msg)
 
 	/**
 	 * Defines the JSON deserialisation protocols related to the Crest classes.
 	 */
 	object CrestProtocol extends DefaultJsonProtocol {
 		implicit val unImplementedFormat: JsonFormat[UnImplementedCrestLink] = jsonFormat1(UnImplementedCrestLink)
+		implicit val unCompletedFormat: JsonFormat[UncompletedCrestLink] = jsonFormat1(UncompletedCrestLink)
 		implicit val unImplementedNamedFormat: JsonFormat[UnImplementedNamedCrestLink] = jsonFormat2(UnImplementedNamedCrestLink)
 
 		implicit val rootFormat: JsonFormat[Root] = lazyFormat(jsonFormat22(Root.apply))
@@ -33,6 +37,9 @@ object CrestLink {
 
 		implicit val itemTypesFormat: JsonFormat[ItemTypes] = lazyFormat(jsonFormat7(ItemTypes.apply))
 		implicit val itemTypesCrestLinkFormat: JsonFormat[CrestLink[ItemTypes]] = jsonFormat(CrestLink[ItemTypes] _, "href")
+
+		implicit val itemTypeFormat: JsonFormat[ItemType] = lazyFormat(jsonFormat1(ItemType.apply))
+		implicit val itemTypeCrestLinkFormat: JsonFormat[NamedCrestLink[ItemType]] = jsonFormat(NamedCrestLink[ItemType] _, "href", "name")
 
 		implicit val marketOrdersFormat: JsonFormat[MarketOrders] = lazyFormat(jsonFormat7(MarketOrders.apply))
 		implicit val marketOrdersCrestLinkFormat: JsonFormat[CrestLink[MarketOrders]] = jsonFormat(CrestLink[MarketOrders] _, "href")
@@ -52,23 +59,15 @@ object CrestLink {
  * @tparam T The type of CrestContainer to construct.
  */
 case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
-
-	/**
-	 * A convenience method to call followLink without construction an authentication Option.
-	 * @param auth The authentication key.
-	 * @return The constructed Crest class.
-	 */
-	def followLink(auth: Option[String]): T = followLink(auth, Map())
-
 	/**
 	 * Followlink executes a request to the CREST API to instantiate the linked Crest class T.
 	 *
 	 * On failure halts webpage construction with HTTP error code.
 	 * @param auth The authentication key or None if unused.
-	 * @param params Optional parameters to add to the request.
+	 * @param params Optional parameters to add to the request. Using this should *not* be necessary!
 	 * @return The constructed Crest class.
 	 */
-	def followLink(auth: Option[String], params: Map[String, String] = Map.empty): T = {
+	def follow(auth: Option[String], params: Map[String, String] = Map.empty): T = {
 		logger.trace(s"Fetching with {}", auth)
 		//get
 		val getRequest = Http(href).method("GET")
@@ -103,4 +102,46 @@ case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
 				throw deserializationE
 		}
 	}
+
+	/**
+	 * TryFollowLinkg executes a request to the CREST API to instantiate the linked Crest class T.
+	 *
+	 * On failure return a Failure with the Throwable that caused the failure.
+	 * @param auth The authentication key or None if unused.
+	 * @param params Optional parameters to add to the request. Using this should *not* be necessary!
+	 * @return A Try of the constructed Crest class.
+	 */
+	def tryFollow(auth: Option[String], params: Map[String, String] = Map.empty): Try[T] = {
+		logger.trace(s"Fetching with {}", auth)
+		//get
+		val getRequest = Http(href).method("GET")
+
+		val acceptRequest = getRequest.header("Accept", "application/json, charset=utf-8")
+		// If the auth is set then add it as parameter.
+		val authedRequest = auth.foldLeft(acceptRequest)((req: HttpRequest, authKey) ⇒ {
+			req.header("Authorization", s"Bearer $authKey")
+		})
+
+		val finalRequest = authedRequest.params(params)
+
+		logger.trace(authedRequest.toString)
+		val tryResponse = Try(finalRequest.asString)
+		tryResponse.flatMap { response ⇒
+			if( response.isError ) {
+				Failure(new CrestCommunicationException(s"Error following link, error code '${response.code}', body: '${response.body}'"))
+			} else {
+				//json to crest object using implicit protocols.
+				val jsonAst = Try(response.body.parseJson)
+				logger.trace(jsonAst.map(_.prettyPrint).toString)
+				jsonAst.flatMap { ast ⇒
+					Try(ast.convertTo[T])
+				}
+			}
+		}
+	}
+}
+
+class CrestLinkParams[T: JsonFormat](href: String, params: Map[String,String]) extends CrestLink[T](href) {
+	def follow(auth: Option[String]) : T = follow(auth, params)
+	def tryFollow(auth: Option[String]): Try[T] = tryFollow(auth, params)
 }

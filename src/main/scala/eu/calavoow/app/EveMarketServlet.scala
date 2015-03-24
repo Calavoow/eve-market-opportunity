@@ -158,7 +158,10 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 				val allMarketOrders = Market.getAllMarketOrders(regionName, auth)
 					.getOrElse(halt(500, "Something went wrong fetching market orders"))
 
-				case class MarketData(item: String, buyOrders: List[MarketOrders.Item], sellOrders: List[MarketOrders.Item], volume : Long)
+				case class MarketData(item: String,
+				                      buyOrders: List[MarketOrders.Item],
+				                      sellOrders: List[MarketOrders.Item],
+				                      volume : Long)
 				val allMarketData = for(marketOrder ← allMarketOrders) yield {
 					val history = Market.getMarketHistory(regionName, marketOrder._1, auth)
 						.getOrElse(halt(500, "Something went wrong fetching market history"))

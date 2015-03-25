@@ -163,9 +163,8 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 				                      sellOrders: List[MarketOrders.Item],
 				                      volume : Long)
 				val allMarketData = for(marketOrder ← allMarketOrders) yield {
-					val history = Market.getMarketHistory(regionName, marketOrder._1, auth)
-						.getOrElse(halt(500, "Something went wrong fetching market history"))
-					val volume : Long = history.items.headOption.map(_.volume).getOrElse {
+					val history = Market.getMarketHistory(regionName, marketOrder._1, auth).filter(_.items.size > 0)
+					val volume : Long = history.map(_.items.maxBy(_.date).volume).getOrElse {
 						logger.warn(s"History of item was empty: ${marketOrder._1}")
 						0L
 					}
@@ -192,10 +191,7 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 	get("/test/:region") {
 		val regionName = params("region")
 		val authCode = cookies("access_token")
-		val itemTypes = Market.getAllItemTypes(authCode)
-		val allMarketHistory = for(itemType ← itemTypes) yield {
-			Market.getMarketHistory(regionName, itemType.name, authCode)
-		}
+		val allMarketHistory = Market.getAllMarketHistory(regionName, authCode)
 		allMarketHistory
 	}
 }

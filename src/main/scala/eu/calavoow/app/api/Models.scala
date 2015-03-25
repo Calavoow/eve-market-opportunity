@@ -245,7 +245,6 @@ object Models extends LazyLogging {
 		def fetch(marketID: Int, typeID: Int, auth: Option[String]): Try[Option[MarketHistory]] = {
 			import CrestLink.CrestProtocol._
 			val url = s"https://crest-tq.eveonline.com/market/$marketID/types/$typeID/history/"
-			logger.debug(url)
 			CrestLink[MarketHistory](url).tryFollow(auth) match {
 				case Success(x) ⇒ Success(Some(x))
 				case Failure(cce : CrestLink.CrestCommunicationException) if cce.errorCode == 404 ⇒

@@ -102,7 +102,7 @@ object Market extends LazyLogging {
 			Success(marketOrder.authedIterable(itemTypeLink)(oAuth, retries).map(_.items).flatten.toList)
 		}, { throwable ⇒
 			// At least log something went wrong.
-			logger.info(s"Unable to fetch a buy, error msg: ${throwable.getMessage()}")
+			logger.info(s"Unable to fetch a buy, error msg: ${throwable.getMessage}")
 			Failure(throwable)
 		}).getOrElse(Nil)
 
@@ -111,11 +111,26 @@ object Market extends LazyLogging {
 			Success(marketOrder.authedIterable(itemTypeLink)(oAuth, retries).map(_.items).flatten.toList)
 		}, { throwable ⇒
 			// At least log something went wrong.
-			logger.info(s"Unable to fetch a buy, error msg: ${throwable.getMessage()}")
+			logger.info(s"Unable to fetch a buy, error msg: ${throwable.getMessage}")
 			Failure(throwable)
 		}).getOrElse(Nil)
 
 		(allBuy, allSell)
+	}
+
+	def getAllMarketHistory(regionName: String, auth: String) = {
+		val itemTypes = getAllItemTypes(auth)
+		val atomicCounter = new AtomicInteger(0)
+		val nrItemTypes = itemTypes.size
+		val futures = for(itemType ← itemTypes) yield {
+			Future {
+				val res = getMarketHistory(regionName, itemType.name, auth)
+				val count = atomicCounter.incrementAndGet()
+				logger.debug(s"History $count/$nrItemTypes")
+				res
+			}
+		}
+		Await.result(Future.sequence(futures), 10 minutes)
 	}
 
 	def getMarketHistory(regionName: String,
@@ -124,18 +139,14 @@ object Market extends LazyLogging {
 		val oAuth = Some(auth)
 
 		val region = getRegions(auth).get(regionName).map(_.link.href)
-		logger.debug(region.toString)
 		val marketIdRegex = """.*/(\d+)/.*""".r
 		val marketId = region.flatMap(marketIdRegex.findFirstMatchIn) map (_.group(1))
-		logger.trace(marketId.toString)
 
 		// Get the itemType link.
 		val itemTypes = getAllItemTypes(auth)
 		val itemTypeLink = itemTypes.find(_.name == itemTypeName).map(_.href)
-		logger.debug(s"Item type link: $itemTypeLink")
 		val itemTypeIdRegex = """.*/(\d+)/""".r
 		val itemId = itemTypeLink.flatMap(itemTypeIdRegex.findFirstMatchIn) map (_.group(1))
-		logger.debug(s"ItemID: $itemId")
 
 		val marketHistory = (for (
 			mId ← marketId;
@@ -143,7 +154,7 @@ object Market extends LazyLogging {
 		) yield {
 			Util.retry(3) {
 				val res = MarketHistory.fetch(marketID = mId.toInt, typeID = iId.toInt, auth = oAuth)
-				res.failed.map(failure ⇒ logger.info(s"Failed fetching market history: $failure"))
+				res.failed.foreach(failure ⇒ logger.info(s"Failed fetching market history: $failure"))
 				res
 			}.toOption.flatten
 		}) flatten
@@ -196,7 +207,7 @@ object Market extends LazyLogging {
 				(orderVolume, volumeSum + orderVolume, price)
 			}).drop(1) // Drop the first element (0,0,0.0)
 				.map { case r@(orderVolume, runningVolume, price) ⇒
-				logger.debug(r.toString)
+				logger.debug(r.toString())
 				// Weigh the order by volume, limited by the max `volume`
 				if(runningVolume < volume) {
 					orderVolume * price

@@ -112,7 +112,7 @@ case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
 	 * @return A Try of the constructed Crest class.
 	 */
 	def tryFollow(auth: Option[String], params: Map[String, String] = Map.empty): Try[T] = {
-		logger.trace(s"Fetching with {}", auth)
+		logger.trace(s"Fetching with $auth")
 		//get
 		val getRequest = Http(href).method("GET")
 

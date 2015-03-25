@@ -173,18 +173,29 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 				}
 
 
-				val itemInfos = for(marketData ← allMarketData) yield {
-					val item10Vol = (marketData.volume / 10.0).ceil.toLong
-					val (avgBuy, avgSell) = Market.avgPrice(marketData.buyOrders, marketData.sellOrders, item10Vol)
-					logger.debug(s"Average buy/sell price: $avgBuy/$avgSell")
-					// If there is Some input, use it to calculate the daily turnover.
-					val dailyTurnOver = input.map { case (margin, tax) ⇒
-						Market.turnOver(avgBuy, avgSell, item10Vol, margin, tax)
+				val itemInfos = for ( marketData ← allMarketData )
+					yield {
+						val item10Vol = (marketData.volume / 10.0).ceil.toLong
+						val (avgBuy, avgSell) = Market.avgPrice(marketData.buyOrders, marketData.sellOrders, item10Vol)
+						logger.debug(s"Average buy/sell price: $avgBuy/$avgSell")
+						// If there is Some input, use it to calculate the daily turnover.
+						val dailyTurnOver = input.map { case (margin, tax) ⇒
+							Market.turnOver(avgBuy, avgSell, item10Vol, margin, tax)
+						}
+						CoreItemInfo(marketData.item, avgBuy, avgSell, dailyTurnOver)
 					}
-					CoreItemInfo(marketData.item, avgBuy, avgSell, dailyTurnOver)
-				}
 				Ok(CoreMarketInfo(itemInfos).toJson.compactPrint)
 			case None ⇒ halt(401, "The authentication token is not set.")
 		}
+	}
+
+	get("/test/:region") {
+		val regionName = params("region")
+		val authCode = cookies("access_token")
+		val itemTypes = Market.getAllItemTypes(authCode)
+		val allMarketHistory = for(itemType ← itemTypes) yield {
+			Market.getMarketHistory(regionName, itemType.name, authCode)
+		}
+		allMarketHistory
 	}
 }

@@ -1,15 +1,11 @@
 package eu.calavoow.app.api
 
-import java.util.Date
-
+import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.util.Util
 import spray.json.JsonFormat
+import scala.util.{Try, Success, Failure}
 
-import scala.util.Try
-
-import scala.util.Success
-
-object Models {
+object Models extends LazyLogging {
 
 	/**
 	 * A CrestContainer is a class that contains links to followup pages and the information on the current crest page.
@@ -48,7 +44,7 @@ object Models {
 				override def iterator = new Iterator[T] {
 					var self: Option[Try[T]] = Some(Success(AuthedIterable.this.asInstanceOf[T]))
 
-					override def hasNext = !(self.isEmpty && self.get.isFailure)
+					override def hasNext = !self.isEmpty && !self.get.isFailure
 
 					override def next() = {
 						val res = self.get.get
@@ -85,11 +81,11 @@ object Models {
 	case class UnImplementedNamedCrestLink(href: String, name: String) extends CrestContainer
 
 	object Root {
-		def fetch(auth: Option[String]): Root = {
+		def fetch(auth: Option[String]) = {
 			import CrestLink.CrestProtocol._
 			// The only "static" CREST URL.
 			val endpoint = "https://crest-tq.eveonline.com/"
-			CrestLink[Root](endpoint).follow(auth)
+			CrestLink[Root](endpoint).tryFollow(auth)
 		}
 
 		case class Motd(dust: UnImplementedCrestLink,
@@ -102,10 +98,7 @@ object Models {
 		                      eve_str: String)
 
 		case class Industry(facilities: UnImplementedCrestLink,
-		                    specialities: UnImplementedCrestLink,
-		                    teamsInAuction: UnImplementedCrestLink,
-		                    systems: UnImplementedCrestLink,
-		                    teams: UnImplementedCrestLink)
+		                    systems: UnImplementedCrestLink)
 
 		case class Clients(dust: UnImplementedCrestLink,
 		                   eve: UnImplementedCrestLink)
@@ -238,9 +231,28 @@ object Models {
 			                orderCount_str: String,
 			                date: String)
 
-		def fetch(marketID: Int, typeID: Int, auth: Option[String]) = {
+		/**
+		 * Get the market history for the given type id.
+		 *
+		 * A Failure means that the request has not been completed (and may be retried).
+		 * A Success(None) means that there was no history for the item.
+		 * Any other result simply has a history for an item.
+		 * @param marketID The market ID.
+		 * @param typeID The type ID.
+		 * @param auth The authentication code.
+		 * @return
+		 */
+		def fetch(marketID: Int, typeID: Int, auth: Option[String]): Try[Option[MarketHistory]] = {
 			import CrestLink.CrestProtocol._
-			CrestLink[MarketHistory](s"https://crest-tq.eveonline.com/market/$marketID/types/$typeID/history/").follow(auth)
+			val url = s"https://crest-tq.eveonline.com/market/$marketID/types/$typeID/history/"
+			logger.debug(url)
+			CrestLink[MarketHistory](url).tryFollow(auth) match {
+				case Success(x) ⇒ Success(Some(x))
+				case Failure(cce : CrestLink.CrestCommunicationException) if cce.errorCode == 404 ⇒
+					// If the given typeID does not have a history page, return None.
+					Success(None)
+				case Failure(x) ⇒ Failure(x)
+			}
 		}
 	}
 

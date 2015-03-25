@@ -1,13 +1,16 @@
 package eu.calavoow.app.market
 
-import java.util
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.api.Models._
 import eu.calavoow.app.api.CrestLink
 import eu.calavoow.app.util.Util
+import eu.calavoow.app.util.Util.SkipException
 import org.scalatra.Control
 
+import concurrent._
 import scalacache._
 import memoization._
 import scala.concurrent.duration._
@@ -18,10 +21,11 @@ import scala.util.matching.Regex
 
 object Market extends LazyLogging {
 	implicit val scalaCache = ScalaCache(GuavaCache())
+	implicit val threadPool = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(50))
 
 	def getRegions(@cacheKeyExclude auth: String): Map[String, NamedCrestLink[Region]] = memoize {
 		val oAuth = Some(auth)
-		val root = Root.fetch(oAuth)
+		val root = Root.fetch(oAuth).get // Throw exception if it goes wrong.
 		logger.trace(s"Root fetched: $root")
 		val regions = root.regions.follow(oAuth)
 		logger.trace(s"Regions fetched: $regions")
@@ -37,11 +41,19 @@ object Market extends LazyLogging {
 		val itemTypes = getAllItemTypes(auth)
 		val oRegion = getRegions(auth).get(regionName).map(_.link.follow(oAuth))
 
+		val atomicCounter = new AtomicInteger(0)
+		val totalItemTypes = itemTypes.size
 		val res = oRegion.map { region ⇒
 			// Note a map, not a flatMap.
-			itemTypes.map { itemType ⇒
-				itemType.name → collectMarketOrders(region, itemType.link, oAuth)
+			val futures = itemTypes.map { itemType ⇒
+				Future {
+					val res = itemType.name → collectMarketOrders(region, itemType.link, oAuth)
+					val count = atomicCounter.incrementAndGet()
+					logger.debug(s"Pulled $count/$totalItemTypes")
+					res
+				}
 			}
+			Await.result(Future.sequence(futures), 10 minutes)
 		}
 
 		res.map(_.toMap)
@@ -78,9 +90,11 @@ object Market extends LazyLogging {
 		val tryBuy = Util.retry(retries) {
 			region.marketBuyLink(itemTypeLink).tryFollow(oAuth)
 		}
+		logger.debug(s"tryBuy: ${tryBuy.map(_ ⇒ "")}")
 		val trySell = Util.retry(retries) {
 			region.marketSellLink(itemTypeLink).tryFollow(oAuth)
 		}
+		logger.debug(s"trySell: ${trySell.map(_ ⇒ "")}")
 
 		// Take the first buy order, and collect all following buyorders.
 		// If the first buy order failed, at least log it.
@@ -108,12 +122,12 @@ object Market extends LazyLogging {
 		                    itemTypeName: String,
 	                    @cacheKeyExclude auth: String) : Option[MarketHistory] = memoize(1 day) {
 		val oAuth = Some(auth)
-		val root = Root.fetch(oAuth)
 
 		val region = getRegions(auth).get(regionName).map(_.link.href)
 		logger.debug(region.toString)
 		val marketIdRegex = """.*/(\d+)/.*""".r
 		val marketId = region.flatMap(marketIdRegex.findFirstMatchIn) map (_.group(1))
+		logger.trace(marketId.toString)
 
 		// Get the itemType link.
 		val itemTypes = getAllItemTypes(auth)
@@ -123,12 +137,16 @@ object Market extends LazyLogging {
 		val itemId = itemTypeLink.flatMap(itemTypeIdRegex.findFirstMatchIn) map (_.group(1))
 		logger.debug(s"ItemID: $itemId")
 
-		val marketHistory = for(
+		val marketHistory = (for (
 			mId ← marketId;
 			iId ← itemId
 		) yield {
-			MarketHistory.fetch(marketID = mId.toInt, typeID = iId.toInt, auth = oAuth)
-		}
+			Util.retry(3) {
+				val res = MarketHistory.fetch(marketID = mId.toInt, typeID = iId.toInt, auth = oAuth)
+				res.failed.map(failure ⇒ logger.info(s"Failed fetching market history: $failure"))
+				res
+			}.toOption.flatten
+		}) flatten
 
 		// Sort the history backwards in time.
 		marketHistory.map { history ⇒ history.copy(items = history.items.sortBy(_.date)(Ordering[String].reverse))}
@@ -205,7 +223,7 @@ object Market extends LazyLogging {
 
 	def getAllItemTypes(@cacheKeyExclude auth: String): List[NamedCrestLink[ItemType]] = memoize(2 days) {
 		val oAuth = Some(auth)
-		val root = Root.fetch(oAuth)
+		val root = Root.fetch(oAuth).get
 		val itemTypesRoot = root.itemTypes.follow(oAuth)
 
 		itemTypesRoot.authedIterable(Some(auth)).map(_.items).flatten.toList

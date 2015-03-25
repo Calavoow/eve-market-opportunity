@@ -2,6 +2,7 @@ package eu.calavoow.app.api
 
 import java.net.SocketTimeoutException
 
+import scala.concurrent
 import scala.util.{Try,Failure,Success}
 import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.api.CrestLink.CrestCommunicationException
@@ -12,7 +13,7 @@ import spray.json._
 import scalaj.http.{Http, HttpRequest}
 
 object CrestLink {
-	class CrestCommunicationException(msg: String) extends RuntimeException(msg)
+	case class CrestCommunicationException(errorCode: Int, msg: String) extends RuntimeException(msg)
 
 	/**
 	 * Defines the JSON deserialisation protocols related to the Crest classes.
@@ -25,7 +26,7 @@ object CrestLink {
 		implicit val rootFormat: JsonFormat[Root] = lazyFormat(jsonFormat22(Root.apply))
 		implicit val rootMotdFormat: JsonFormat[Root.Motd] = jsonFormat3(Root.Motd)
 		implicit val rootUserCountsFormat: JsonFormat[Root.UserCounts] = jsonFormat4(Root.UserCounts)
-		implicit val rootIndustryFormat: JsonFormat[Root.Industry] = jsonFormat5(Root.Industry)
+		implicit val rootIndustryFormat: JsonFormat[Root.Industry] = jsonFormat2(Root.Industry)
 		implicit val rootClientsFormat: JsonFormat[Root.Clients] = jsonFormat2(Root.Clients)
 
 		implicit val regionsFormat: JsonFormat[Regions] = lazyFormat(jsonFormat5(Regions.apply))
@@ -91,7 +92,6 @@ case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
 
 			//json to crest object using implicit protocols.
 			val jsonAst = response.body.parseJson
-			logger.trace(jsonAst.prettyPrint)
 			jsonAst.convertTo[T]
 		} catch {
 			case timeout: SocketTimeoutException ⇒
@@ -128,7 +128,7 @@ case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
 		val tryResponse = Try(finalRequest.asString)
 		tryResponse.flatMap { response ⇒
 			if( response.isError ) {
-				Failure(new CrestCommunicationException(s"Error following link, error code '${response.code}', body: '${response.body}'"))
+				Failure(new CrestCommunicationException(response.code, response.body))
 			} else {
 				//json to crest object using implicit protocols.
 				val jsonAst = Try(response.body.parseJson)

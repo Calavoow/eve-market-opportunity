@@ -1,10 +1,13 @@
 package eu.calavoow.app
 
+import java.io.PrintWriter
+
 import api.Models.MarketOrders
 import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.api.Login
 import eu.calavoow.app.config.Config
 import market.Market
+import org.fusesource.scalate.util.Resource
 import org.scalatra._
 import spray.json._
 
@@ -141,8 +144,8 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 	get("/marketData/:region") {
 		contentType = formats("json")
 		val oTax = params.get("tax")
-		val oMargin = params.get("margin")
-		val input = for(tax ← oTax; margin ← oMargin) yield (margin.toDouble, tax.toDouble)
+		val oBrokerTax = params.get("brokertax")
+		val input = for(tax ← oTax; margin ← oBrokerTax) yield (margin.toDouble, tax.toDouble)
 
 		import eu.calavoow.app.api.CrestLink.CrestProtocol._
 		case class CoreMarketInfo(coreItemInfo: Iterable[CoreItemInfo])
@@ -155,35 +158,55 @@ class EveMarketServlet extends EveMarketOpportunityStack with ApiFormats with La
 		authCode match {
 			case Some(auth) ⇒
 				val regionName = params("region")
-				val allMarketOrders = Market.getAllMarketOrders(regionName, auth)
+				val allMarketHistory = Market.getAllMarketHistory(regionName, auth)
+				val definedMarketTypes = allMarketHistory.filter(_._2.isDefined).map(_._1)
+				val allMarketOrders = Market.getMarketOrders(regionName, definedMarketTypes, auth)
 					.getOrElse(halt(500, "Something went wrong fetching market orders"))
 
+				// A more descriptive container of the required data.
 				case class MarketData(item: String,
 				                      buyOrders: List[MarketOrders.Item],
 				                      sellOrders: List[MarketOrders.Item],
 				                      volume : Long)
-				val allMarketData = for(marketOrder ← allMarketOrders) yield {
-					val history = Market.getMarketHistory(regionName, marketOrder._1, auth).filter(_.items.size > 0)
-					val volume : Long = history.map(_.items.maxBy(_.date).volume).getOrElse {
-						logger.warn(s"History of item was empty: ${marketOrder._1}")
+
+				// merge both market orders and market history data
+				val allMarketData = for (
+					itemType ← definedMarketTypes
+				) yield {
+					// Note that it is assumed that there exist entries for each item type.
+					val marketOrders = allMarketOrders(itemType.name)
+					val oMarketHistory = allMarketHistory.get(itemType).flatten
+					val volume = oMarketHistory.filter(_.items.size > 0)
+						.map(_.items.maxBy(_.date).volume).getOrElse {
+						logger.warn(s"History of item was empty: ${marketOrders._1}")
 						0L
 					}
-					MarketData(marketOrder._1, marketOrder._2._1, marketOrder._2._2, volume)
+					MarketData(itemType.name, marketOrders._1, marketOrders._2, volume)
 				}
 
-
-				val itemInfos = for ( marketData ← allMarketData )
-					yield {
-						val item10Vol = (marketData.volume / 10.0).ceil.toLong
-						val (avgBuy, avgSell) = Market.avgPrice(marketData.buyOrders, marketData.sellOrders, item10Vol)
-						logger.debug(s"Average buy/sell price: $avgBuy/$avgSell")
-						// If there is Some input, use it to calculate the daily turnover.
-						val dailyTurnOver = input.map { case (margin, tax) ⇒
-							Market.turnOver(avgBuy, avgSell, item10Vol, margin, tax)
-						}
-						CoreItemInfo(marketData.item, avgBuy, avgSell, dailyTurnOver)
+				val itemInfos = for ( marketData ← allMarketData ) yield {
+					val item10Vol = (marketData.volume / 10.0).ceil.toLong
+					val (avgBuy, avgSell) = Market.avgPrice(marketData.buyOrders, marketData.sellOrders, item10Vol)
+					logger.debug(s"Average buy/sell price: $avgBuy/$avgSell")
+					// If there is Some input, use it to calculate the daily turnover.
+					val dailyTurnOver = input.map { case (brokerTax, tax) ⇒
+						Market.turnOver(avgBuy, avgSell, item10Vol, brokerTax, tax)
 					}
-				Ok(CoreMarketInfo(itemInfos).toJson.compactPrint)
+					CoreItemInfo(marketData.item, avgBuy, avgSell, dailyTurnOver)
+				}
+				val sortedInfos = itemInfos.toSeq.sortBy { info ⇒
+					info.dailyTurnOver.getOrElse(0.0d)
+				}
+				try {
+					val marketSortedFile = Resource.fromFile("marketSorted.csv")
+					val writer = new PrintWriter(marketSortedFile.writer)
+					for(info ← sortedInfos) {
+						writer.println(s"${info.itemType},${info.avgBuy},${info.avgSell},${info.dailyTurnOver}")
+					}
+				} catch {
+					case e: RuntimeException ⇒ logger.error(e.getMessage)
+				}
+				Ok(CoreMarketInfo(sortedInfos).toJson.compactPrint)
 			case None ⇒ halt(401, "The authentication token is not set.")
 		}
 	}

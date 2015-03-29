@@ -33,12 +33,12 @@ object Market extends LazyLogging {
 		regions.items.map {i ⇒ i.name → i} toMap
 	}
 
-	def getAllMarketOrders(regionName: String,
-		                      @cacheKeyExclude auth: String)
-								: Option[Map[String, (List[MarketOrders.Item], List[MarketOrders.Item])]]
-								= memoize(5 minutes) {
+	def getMarketOrders(regionName: String,
+	                    itemTypes: Iterable[NamedCrestLink[ItemType]],
+	                    @cacheKeyExclude auth: String)
+	: Option[Map[String, (List[MarketOrders.Item], List[MarketOrders.Item])]]
+	= {
 		val oAuth = Some(auth)
-		val itemTypes = getAllItemTypes(auth)
 		val oRegion = getRegions(auth).get(regionName).map(_.link.follow(oAuth))
 
 		val atomicCounter = new AtomicInteger(0)
@@ -82,19 +82,21 @@ object Market extends LazyLogging {
 		}
 	}
 
-	private def collectMarketOrders(region: Region, itemTypeLink: CrestLink[ItemType], oAuth: Option[String])
-		: (List[MarketOrders.Item], List[MarketOrders.Item]) = {
+	private def collectMarketOrders(region: Region,
+	                                itemTypeLink: CrestLink[ItemType],
+	                                @cacheKeyExclude oAuth: Option[String])
+		: (List[MarketOrders.Item], List[MarketOrders.Item]) = memoize(5 minutes) {
 		// The number of times to retry a failed CREST request.
 		val retries = 3
 		// Try to get the first page of buy orders, retrying `retries` times.
 		val tryBuy = Util.retry(retries) {
 			region.marketBuyLink(itemTypeLink).tryFollow(oAuth)
 		}
-		logger.debug(s"tryBuy: ${tryBuy.map(_ ⇒ "")}")
+		logger.trace(s"tryBuy: ${tryBuy.map(_ ⇒ "")}")
 		val trySell = Util.retry(retries) {
 			region.marketSellLink(itemTypeLink).tryFollow(oAuth)
 		}
-		logger.debug(s"trySell: ${trySell.map(_ ⇒ "")}")
+		logger.trace(s"trySell: ${trySell.map(_ ⇒ "")}")
 
 		// Take the first buy order, and collect all following buyorders.
 		// If the first buy order failed, at least log it.
@@ -118,7 +120,7 @@ object Market extends LazyLogging {
 		(allBuy, allSell)
 	}
 
-	def getAllMarketHistory(regionName: String, auth: String) = {
+	def getAllMarketHistory(regionName: String, auth: String) : Map[NamedCrestLink[ItemType], Option[MarketHistory]] = {
 		val itemTypes = getAllItemTypes(auth)
 		val atomicCounter = new AtomicInteger(0)
 		val nrItemTypes = itemTypes.size
@@ -127,10 +129,10 @@ object Market extends LazyLogging {
 				val res = getMarketHistory(regionName, itemType.name, auth)
 				val count = atomicCounter.incrementAndGet()
 				logger.debug(s"History $count/$nrItemTypes")
-				res
+				itemType → res
 			}
 		}
-		Await.result(Future.sequence(futures), 10 minutes)
+		Await.result(Future.sequence(futures).map(_.toMap), 10 minutes)
 	}
 
 	def getMarketHistory(regionName: String,
@@ -175,12 +177,12 @@ object Market extends LazyLogging {
 	 * @param avgBuy The average buy price to calculate with
 	 * @param avgSell Average sell price
 	 * @param volume The volume of the time period
-	 * @param margin The broker order tax.
+	 * @param brokerTax The broker order tax.
 	 * @param tax Tax deducted from sell orders
 	 * @return The flip margin for `volume` items.
 	 */
-	def turnOver(avgBuy: Double, avgSell: Double, volume: Long, margin: Double, tax: Double) : Double = {
-		(avgSell - avgBuy - margin * (avgSell + avgBuy) + avgSell * tax) * volume
+	def turnOver(avgBuy: Double, avgSell: Double, volume: Long, brokerTax: Double, tax: Double) : Double = {
+		(avgSell - avgBuy - brokerTax * (avgSell + avgBuy) + avgSell * tax) * volume
 	}
 
 	/**
@@ -202,12 +204,10 @@ object Market extends LazyLogging {
 				// Map to (volume, price)
 				(order.volume, order.price)
 			}).scanLeft((0L,0L,0.0d))({ case ((_, volumeSum, _), (orderVolume, price)) ⇒
-				logger.debug(s"sum: $volumeSum, for ($orderVolume, $price)")
 				// Change to (volume, running sum of volume, price)
 				(orderVolume, volumeSum + orderVolume, price)
 			}).drop(1) // Drop the first element (0,0,0.0)
 				.map { case r@(orderVolume, runningVolume, price) ⇒
-				logger.debug(r.toString())
 				// Weigh the order by volume, limited by the max `volume`
 				if(runningVolume < volume) {
 					orderVolume * price
@@ -217,7 +217,6 @@ object Market extends LazyLogging {
 					volumeLeft * price
 				}
 			} takeWhile { x ⇒
-				logger.debug(x.toString)
 				x >= 0
 			} sum
 
@@ -226,9 +225,8 @@ object Market extends LazyLogging {
 		}
 
 		val weightedBuy = weightedPrice(buyOrders.sortBy(_.price)(Ordering[Double].reverse), volume)
-		logger.trace(s"Weighted buy: $weightedBuy")
 		val weightedSell = weightedPrice(sellOrders.sortBy(_.price), volume)
-		logger.trace(s"Weighted sell: $weightedSell")
+		logger.trace(s"Weighted buy/sell: $weightedBuy / $weightedSell")
 		(weightedBuy, weightedSell)
 	}
 

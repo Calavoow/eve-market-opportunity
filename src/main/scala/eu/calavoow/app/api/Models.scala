@@ -217,8 +217,10 @@ object Models extends LazyLogging {
 		 * @param itemType
 		 * @return
 		 */
-		def authedIterable(itemType: CrestLink[ItemType]) =
+		def authedIterable(itemType: CrestLink[ItemType]) = {
+			if(next.isDefined) logger.info(s"Market order has next: $next")
 			this.paramsIterable(Map("type" → itemType.href)) _
+		}
 	}
 
 	object MarketHistory {

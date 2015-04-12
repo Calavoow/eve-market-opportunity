@@ -35,8 +35,8 @@ object EveMarketOpportunityBuild extends Build {
 				"com.typesafe" % "config" % "1.2.1",
 				"com.typesafe.scala-logging" %% "scala-logging" % "3.1.0",
 				"io.spray" %% "spray-json" % "1.3.1",
-				"org.scalaj" %% "scalaj-http" % "1.1.0",
-				"com.github.cb372" %% "scalacache-guava" % "0.5.2"
+				"com.github.cb372" %% "scalacache-guava" % "0.5.2",
+				"net.databinder.dispatch" %% "dispatch-core" % "0.11.2"
 			),
 			scalateTemplateConfig in Compile <<= (sourceDirectory in Compile) { base =>
 				Seq(

@@ -4,8 +4,7 @@ import java.net.SocketTimeoutException
 
 import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.config.Config
-
-import scalaj.http.Http
+import dispatch._, Defaults._
 
 object Login extends LazyLogging {
 
@@ -25,27 +24,18 @@ object Login extends LazyLogging {
 
 	def exchangeRefreshToken(token: String) = exchangeCode(token, "refresh_token", "refresh_token")
 
-	def exchangeCode(accessCode: String, codeParam: String, grantType: String) = {
-		val tokenEndpoint = "https://login.eveonline.com/oauth/token"
+	def exchangeCode(accessCode: String, codeParam: String, grantType: String): Future[String] = {
+		val tokenEndpoint = host("https://login.eveonline.com/").secure / "oauth" / "token"
 		val config = Config.readApiConfig
-		val request = Http(tokenEndpoint)
-			.postForm(Seq("grant_type" → grantType, codeParam → accessCode))
-			.auth(config.clientId, config.secretKey)
-			.timeout(5000, 5000)
-		logger.trace(s"AccessCode Request, headers : ${request.headers}\n params ${request.params}")
+		val request = tokenEndpoint.POST
+			.<<(List("grant_type" → grantType, codeParam → accessCode))
+			.<:<(List("clientid" → config.clientId, "key" → config.secretKey))
+		logger.trace(s"AccessCode Request: ${request}")
 
-		try {
-			val result = request.asString
-			if( result.isSuccess ) {
-				Some(result.body)
-			} else {
-				logger.info(s"Exchanging the EVE access code went wrong: $result")
-				None
-			}
-		} catch {
-			case timeout: SocketTimeoutException ⇒
-				logger.warn(s"Timeout while exchanging accessCode $accessCode: $timeout")
-				None
+		val result = Http(request OK as.String)
+		result.failed.foreach { thr ⇒
+			logger.info(s"Failure when exchanging access code: $thr")
 		}
+		result
 	}
 }

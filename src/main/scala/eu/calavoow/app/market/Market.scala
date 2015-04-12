@@ -169,10 +169,10 @@ object Market extends LazyLogging {
 	 * The turnover for the given avg buy and avg sell.
 	 *
 	 * Cost per bought item
-	 * avgBuy * (1 + margin)
+	 * avgBuy * (1 + brokerTax)
 	 *
 	 * Profit per sold item
-	 * avgSell * (1 - margin - tax)
+	 * avgSell * (1 - brokerTax - tax)
 	 *
 	 * @param avgBuy The average buy price to calculate with
 	 * @param avgSell Average sell price
@@ -182,7 +182,7 @@ object Market extends LazyLogging {
 	 * @return The flip margin for `volume` items.
 	 */
 	def turnOver(avgBuy: Double, avgSell: Double, volume: Long, brokerTax: Double, tax: Double) : Double = {
-		(avgSell - avgBuy - brokerTax * (avgSell + avgBuy) + avgSell * tax) * volume
+		(avgSell - avgBuy - brokerTax * (avgSell + avgBuy) - avgSell * tax) * volume
 	}
 
 	/**
@@ -224,6 +224,7 @@ object Market extends LazyLogging {
 			summedWeightedPrice / volume
 		}
 
+		// Order buy orders descending (highest first)
 		val weightedBuy = weightedPrice(buyOrders.sortBy(_.price)(Ordering[Double].reverse), volume)
 		val weightedSell = weightedPrice(sellOrders.sortBy(_.price), volume)
 		logger.trace(s"Weighted buy/sell: $weightedBuy / $weightedSell")

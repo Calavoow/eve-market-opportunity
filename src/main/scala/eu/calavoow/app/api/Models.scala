@@ -1,9 +1,10 @@
 package eu.calavoow.app.api
 
 import com.typesafe.scalalogging.LazyLogging
+import dispatch.StatusCode
 import eu.calavoow.app.util.Util
 import spray.json.JsonFormat
-import scala.util.{Try, Success, Failure}
+import concurrent.{ExecutionContext, Future}
 
 object Models extends LazyLogging {
 
@@ -24,10 +25,16 @@ object Models extends LazyLogging {
 	 *
 	 * @tparam T The type of the Model being iterated over.
 	 */
-	trait AuthedIterable[T <: AuthedIterable[T]] {
+	trait AuthedAsyncIterable[T <: AuthedAsyncIterable[T]] {
+		self: T ⇒
+		/**
+		 * The method that must be implemented by the extender.
+		 * @return An option of a link to the next element.
+		 */
 		def next: Option[CrestLink[T]]
 
-		def authedIterable(auth: Option[String], retries: Int = 1) : Iterable[T] = paramsIterable(Map.empty)(auth, retries)
+		def authedIterator(auth: Option[String], retries: Int = 1)(implicit ec: ExecutionContext): AsyncIterator[T]
+		= paramsIterator(Map.empty)(auth, retries)
 
 		/**
 		 * Construct an iterable with parameters over the given type T, which iterates throught the CREST.
@@ -39,20 +46,40 @@ object Models extends LazyLogging {
 		 * @param retries The number of retries.
 		 * @return An Iterable over T.
 		 */
-		def paramsIterable(params: Map[String,String] = Map.empty)(auth: Option[String], retries: Int = 1): Iterable[T] =
-			new Iterable[T] {
-				override def iterator = new Iterator[T] {
-					var self: Option[Try[T]] = Some(Success(AuthedIterable.this.asInstanceOf[T]))
-
-					override def hasNext = !self.isEmpty && !self.get.isFailure
-
-					override def next() = {
-						val res = self.get.get
-						self = for(nxt  ← res.next) yield Util.retry(retries) {
-							nxt.tryFollow(auth, params)
+		def paramsIterator(params: Map[String, String] = Map.empty)
+		                  (auth: Option[String], retries: Int = 1)
+		                  (implicit ec: ExecutionContext)
+		: AsyncIterator[T] =
+			new AsyncIterator[T] {
+				var lastLink: Future[Option[T]] = Future.successful(Some(self))
+				// Create an iterator that has a future option of the CrestLink.
+				val currentLink = Iterator.iterate[Future[Option[T]]](
+					lastLink
+				) { futureSelf ⇒
+					// Has type Future[Option[T]]
+					// Future[Future[Option[T]]] is returned, so flatMap it.
+					futureSelf.flatMap { oSelf ⇒
+						val res = for (
+							curSelf ← oSelf;
+							link ← curSelf.next
+						) yield Util.retryFuture(retries) {
+								link.follow(auth, params)
+							}
+						// Invert Option[Future[T]] to Future[Option[T]]
+						res match {
+							case None ⇒ Future.successful(None)
+							case Some(fut) ⇒ fut.map(Some.apply)
 						}
-						res
 					}
+				}
+
+				override def hasNext: Future[Boolean] = lastLink.map(_.isDefined)
+
+				override def next: Future[T] = {
+					// Use the last link as "next", and fetch the next one.
+					val res = lastLink.map(_.get)
+					lastLink = currentLink.next()
+					res
 				}
 			}
 	}
@@ -81,11 +108,11 @@ object Models extends LazyLogging {
 	case class UnImplementedNamedCrestLink(href: String, name: String) extends CrestContainer
 
 	object Root {
-		def fetch(auth: Option[String]) = {
+		def fetch(auth: Option[String])(implicit ec: ExecutionContext): Future[Root] = {
 			import CrestLink.CrestProtocol._
 			// The only "static" CREST URL.
 			val endpoint = "https://crest-tq.eveonline.com/"
-			CrestLink[Root](endpoint).tryFollow(auth)
+			CrestLink[Root](endpoint).follow(auth)
 		}
 
 		case class Motd(dust: UnImplementedCrestLink,
@@ -155,7 +182,7 @@ object Models extends LazyLogging {
 	                     next: Option[CrestLink[ItemTypes]],
 	                     totalCount: Int,
 	                     pageCount_str: String,
-	                     previous: Option[CrestLink[ItemTypes]]) extends CrestContainer with AuthedIterable[ItemTypes]
+	                     previous: Option[CrestLink[ItemTypes]]) extends CrestContainer with AuthedAsyncIterable[ItemTypes]
 
 	/**
 	 * TODO: Fill in this stub.
@@ -207,19 +234,19 @@ object Models extends LazyLogging {
 	                        pageCount_str: String,
 	                        totalCount: Int,
 	                        next: Option[CrestLink[MarketOrders]],
-	                        previous: Option[CrestLink[MarketOrders]]) extends CrestContainer with AuthedIterable[MarketOrders] {
+	                        previous: Option[CrestLink[MarketOrders]]) extends CrestContainer with AuthedAsyncIterable[MarketOrders] {
 		/**
-		 * Construct an iterable through the market orders.
+		 * Construct an asynchonous iterator through the market orders.
 		 *
 		 * A parameter itemType is required to iterate through the market orders.
 		 *
 		 * TODO: Check if this is the case
-		 * @param itemType
-		 * @return
+		 * @param itemType A CREST link to the itemtype for which market orders should be retrieved.
+		 * @return An asyncIterator through the market orders of the given itemType.
 		 */
-		def authedIterable(itemType: CrestLink[ItemType]) = {
+		def authedIterator(itemType: CrestLink[ItemType])(implicit ec: ExecutionContext) = {
 			if(next.isDefined) logger.info(s"Market order has next: $next")
-			this.paramsIterable(Map("type" → itemType.href)) _
+			this.paramsIterator(Map("type" → itemType.href)) _
 		}
 	}
 
@@ -244,15 +271,13 @@ object Models extends LazyLogging {
 		 * @param auth The authentication code.
 		 * @return
 		 */
-		def fetch(marketID: Int, typeID: Int, auth: Option[String]): Try[Option[MarketHistory]] = {
+		def fetch(marketID: Int, typeID: Int, auth: Option[String])(implicit ec: ExecutionContext): Future[Option[MarketHistory]] = {
 			import CrestLink.CrestProtocol._
 			val url = s"https://crest-tq.eveonline.com/market/$marketID/types/$typeID/history/"
-			CrestLink[MarketHistory](url).tryFollow(auth) match {
-				case Success(x) ⇒ Success(Some(x))
-				case Failure(cce : CrestLink.CrestCommunicationException) if cce.errorCode == 404 ⇒
-					// If the given typeID does not have a history page, return None.
-					Success(None)
-				case Failure(x) ⇒ Failure(x)
+			CrestLink[MarketHistory](url).follow(auth).map(Some.apply).recover{
+				case StatusCode(404) ⇒
+					// If the given typeID does not have a history page (maybe because it's not on the market), return None.
+					None
 			}
 		}
 	}

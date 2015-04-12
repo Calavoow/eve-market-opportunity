@@ -2,15 +2,14 @@ package eu.calavoow.app.api
 
 import java.net.SocketTimeoutException
 
-import scala.concurrent
+import concurrent.ExecutionContext
 import scala.util.{Try,Failure,Success}
 import com.typesafe.scalalogging.LazyLogging
 import eu.calavoow.app.api.CrestLink.CrestCommunicationException
 import eu.calavoow.app.api.Models._
-import org.scalatra.Control
 import spray.json._
-
-import scalaj.http.{Http, HttpRequest}
+import dispatch._
+import scala.concurrent.Future
 
 object CrestLink {
 	case class CrestCommunicationException(errorCode: Int, msg: String) extends RuntimeException(msg)
@@ -59,7 +58,7 @@ object CrestLink {
  * @param href The Crest URL to the next link
  * @tparam T The type of CrestContainer to construct.
  */
-case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
+case class CrestLink[T: JsonReader](href: String) extends LazyLogging {
 	/**
 	 * Followlink executes a request to the CREST API to instantiate the linked Crest class T.
 	 *
@@ -68,80 +67,37 @@ case class CrestLink[T: JsonFormat](href: String) extends LazyLogging {
 	 * @param params Optional parameters to add to the request. Using this should *not* be necessary!
 	 * @return The constructed Crest class.
 	 */
-	def follow(auth: Option[String], params: Map[String, String] = Map.empty): T = {
+	def follow(auth: Option[String], params: Map[String, String] = Map.empty)(implicit ec: ExecutionContext): Future[T] = {
 		logger.trace(s"Fetching with {}", auth)
 		//get
-		val getRequest = Http(href).method("GET")
+		val getRequest = url(href).secure
 
-		val acceptRequest = getRequest.header("Accept", "application/json, charset=utf-8")
+		val acceptRequest = getRequest.setHeader("Accept", "application/json, charset=utf-8")
 		// If the auth is set then add it as parameter.
-		val authedRequest = auth.foldLeft(acceptRequest)((req: HttpRequest, authKey) ⇒ {
-			req.header("Authorization", s"Bearer $authKey")
+		val authedRequest = auth.foldLeft(acceptRequest)((req, authKey) ⇒ {
+			req.setHeader("Authorization", s"Bearer $authKey")
 		})
 
-		val finalRequest = authedRequest.params(params)
+		// Add the GET parameters
+		val finalRequest = authedRequest <<? params
 
 		logger.trace(authedRequest.toString)
 
-		try {
-			val response = finalRequest.asString
-			if( response.isError ) {
-				logger.error(s"Error following link: ${response.code}\n${response.body}")
-				new Control {}.halt(502, "EVE CREST returned an error")
-			}
+		val result = Http(finalRequest OK as.String)
 
-			//json to crest object using implicit protocols.
-			val jsonAst = response.body.parseJson
+		val parsedResult = result.map { body ⇒
+			val jsonAst = body.parseJson
 			jsonAst.convertTo[T]
-		} catch {
-			case timeout: SocketTimeoutException ⇒
-				logger.warn(s"Timeout while requesting from EVE CREST: $timeout")
-				new Control {}.halt(504, "Eve CREST API did not respond on time.")
-			case deserializationE: DeserializationException ⇒
-				logger.error(deserializationE.toString)
-				throw deserializationE
 		}
-	}
 
-	/**
-	 * TryFollowLinkg executes a request to the CREST API to instantiate the linked Crest class T.
-	 *
-	 * On failure return a Failure with the Throwable that caused the failure.
-	 * @param auth The authentication key or None if unused.
-	 * @param params Optional parameters to add to the request. Using this should *not* be necessary!
-	 * @return A Try of the constructed Crest class.
-	 */
-	def tryFollow(auth: Option[String], params: Map[String, String] = Map.empty): Try[T] = {
-		logger.trace(s"Fetching with $auth")
-		//get
-		val getRequest = Http(href).method("GET")
-
-		val acceptRequest = getRequest.header("Accept", "application/json, charset=utf-8")
-		// If the auth is set then add it as parameter.
-		val authedRequest = auth.foldLeft(acceptRequest)((req: HttpRequest, authKey) ⇒ {
-			req.header("Authorization", s"Bearer $authKey")
-		})
-
-		val finalRequest = authedRequest.params(params)
-
-		logger.trace(authedRequest.toString)
-		val tryResponse = Try(finalRequest.asString)
-		tryResponse.flatMap { response ⇒
-			if( response.isError ) {
-				Failure(new CrestCommunicationException(response.code, response.body))
-			} else {
-				//json to crest object using implicit protocols.
-				val jsonAst = Try(response.body.parseJson)
-				logger.trace(jsonAst.map(_.prettyPrint).toString)
-				jsonAst.flatMap { ast ⇒
-					Try(ast.convertTo[T])
-				}
-			}
+		parsedResult.onFailure {
+			case x ⇒ logger.error(s"Error following link: $finalRequest\n ${x.getMessage}")
 		}
+
+		parsedResult
 	}
 }
 
 class CrestLinkParams[T: JsonFormat](href: String, params: Map[String,String]) extends CrestLink[T](href) {
-	def follow(auth: Option[String]) : T = follow(auth, params)
-	def tryFollow(auth: Option[String]): Try[T] = tryFollow(auth, params)
+	def follow(auth: Option[String])(implicit ec: ExecutionContext) : Future[T] = follow(auth, params)
 }

@@ -11,6 +11,7 @@ import eu.calavoow.app.util.Util.SkipException
 import org.scalatra.Control
 
 import concurrent._
+import scala.util.control.NonFatal
 import scalacache._
 import memoization._
 import scala.concurrent.duration._
@@ -18,151 +19,195 @@ import scala.language.postfixOps
 import scala.util.{Try,Failure,Success}
 import scalacache.guava.GuavaCache
 import scala.util.matching.Regex
+import scala.async.Async.{async,await}
 
 object Market extends LazyLogging {
 	implicit val scalaCache = ScalaCache(GuavaCache())
-	implicit val threadPool = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(50))
+	implicit val threadPool = scala.concurrent.ExecutionContext.global
 
-	def getRegions(@cacheKeyExclude auth: String): Map[String, NamedCrestLink[Region]] = memoize {
+	def getRegions(@cacheKeyExclude auth: String): Future[Map[String, NamedCrestLink[Region]]] = memoize {
 		val oAuth = Some(auth)
-		val root = Root.fetch(oAuth).get // Throw exception if it goes wrong.
+		val root = Root.fetch(oAuth) // Throw exception if it goes wrong.
 		logger.trace(s"Root fetched: $root")
-		val regions = root.regions.follow(oAuth)
+		val regions = root.flatMap(_.regions.follow(oAuth))
 		logger.trace(s"Regions fetched: $regions")
 
-		regions.items.map {i ⇒ i.name → i} toMap
+		regions.map(_.items.map {i ⇒ i.name → i} toMap)
+	}
+
+	def getRegion(regionName: String, auth: String) : Future[CrestLink[Region]] = {
+		val regions = getRegions(auth)
+		regions.map(_.get(regionName).map(_.link).get)
 	}
 
 	def getMarketOrders(regionName: String,
 	                    itemTypes: Iterable[NamedCrestLink[ItemType]],
 	                    @cacheKeyExclude auth: String)
-	: Option[Map[String, (List[MarketOrders.Item], List[MarketOrders.Item])]]
+	: Future[Map[String, (List[MarketOrders.Item], List[MarketOrders.Item])]]
 	= {
-		val oAuth = Some(auth)
-		val oRegion = getRegions(auth).get(regionName).map(_.link.follow(oAuth))
+		async {
+			val oAuth = Some(auth)
+			val region = await(getRegion(regionName, auth).flatMap(_.follow(oAuth)))
 
-		val atomicCounter = new AtomicInteger(0)
-		val totalItemTypes = itemTypes.size
-		val res = oRegion.map { region ⇒
-			// Note a map, not a flatMap.
-			val futures = itemTypes.map { itemType ⇒
-				Future {
-					val res = itemType.name → collectMarketOrders(region, itemType.link, oAuth)
-					val count = atomicCounter.incrementAndGet()
-					logger.debug(s"Pulled $count/$totalItemTypes")
-					res
+			val atomicCounter = new AtomicInteger(0)
+			val totalItemTypes = itemTypes.size
+			val res = itemTypes.map { itemType ⇒
+				val res = collectMarketOrders(region, itemType.link, oAuth)
+				val count = atomicCounter.incrementAndGet()
+				logger.debug(s"Pulled $count/$totalItemTypes")
+				res.map {
+					itemType.name → _
 				}
 			}
-			Await.result(Future.sequence(futures), 10 minutes)
+			await(Future.sequence(res).map(_.toMap))
 		}
-
-		res.map(_.toMap)
 	}
 
 	def getMarketOrders(regionName: String,
 	                    itemTypeName: String,
 	                    @cacheKeyExclude auth: String
-		                   ): Option[(List[MarketOrders.Item], List[MarketOrders.Item])] = memoize(5 minutes) {
-		val oAuth = Some(auth)
-		val root = Root.fetch(oAuth)
+		                   ): Future[(List[MarketOrders.Item], List[MarketOrders.Item])] = memoize(5 minutes) {
+		async {
+			val oAuth = Some(auth)
+			val region = await(getRegion(regionName, auth).flatMap(_.follow(oAuth)))
 
-		val region = getRegions(auth).get(regionName).map(_.link.follow(oAuth))
-		logger.debug(region.toString)
+			// Get the itemType link.
+			val itemTypes = await(getAllItemTypes(auth))
+			val itemTypeLink = itemTypes.find(_.name == itemTypeName)
 
-		// Get the itemType link.
-		val itemTypes = getAllItemTypes(auth)
-		val itemTypeLink = itemTypes.find(_.name == itemTypeName)
-
-		// For the found region and the item type, collect the market orders.
-		for (
-			regionInst ← region;
-			itemLink ← itemTypeLink
-		) yield {
-			collectMarketOrders(regionInst, itemLink.link, oAuth)
+			// For the found region and the item type, collect the market orders.
+			val marketOrders = for (
+				itemLink ← itemTypeLink
+			) yield {
+				collectMarketOrders(region, itemLink.link, oAuth)
+			}
+			await(marketOrders.getOrElse(Future.successful((Nil,Nil))))
 		}
 	}
 
 	private def collectMarketOrders(region: Region,
 	                                itemTypeLink: CrestLink[ItemType],
 	                                @cacheKeyExclude oAuth: Option[String])
-		: (List[MarketOrders.Item], List[MarketOrders.Item]) = memoize(5 minutes) {
-		// The number of times to retry a failed CREST request.
-		val retries = 3
-		// Try to get the first page of buy orders, retrying `retries` times.
-		val tryBuy = Util.retry(retries) {
-			region.marketBuyLink(itemTypeLink).tryFollow(oAuth)
+		: Future[(List[MarketOrders.Item], List[MarketOrders.Item])] = {
+		async {
+			// The number of times to retry a failed CREST request.
+			val retries = 3
+			// Try to get the first page of buy orders, retrying `retries` times.
+			val futBuy = Util.retryFuture(retries) {
+				region.marketBuyLink(itemTypeLink).follow(oAuth)
+			}
+			val futSell = Util.retryFuture(retries) {
+				region.marketSellLink(itemTypeLink).follow(oAuth)
+			}
+
+			def allOrders(init: MarketOrders) = {
+				// Take the first buy order, and collect all following buyorders.
+				// If the first buy order failed, at least log it.
+				val traversableBuys = init.authedIterator(itemTypeLink)(oAuth,retries).map(_.map(_.items))
+				Future.sequence(traversableBuys).map(_.toList.flatten)
+			}
+
+			val allBuy = allOrders(await(futBuy))
+			val allSell = allOrders(await(futSell))
+
+			// Log errors
+			allBuy.failed.foreach { throwable ⇒
+				logger.info(s"Unable to fetch a buy, error msg: ${throwable.getMessage}")
+			}
+			allSell.failed.foreach { throwable ⇒
+				logger.info(s"Unable to fetch a buy, error msg: ${throwable.getMessage}")
+			}
+
+			(await(allBuy), await(allSell))
 		}
-		logger.trace(s"tryBuy: ${tryBuy.map(_ ⇒ "")}")
-		val trySell = Util.retry(retries) {
-			region.marketSellLink(itemTypeLink).tryFollow(oAuth)
-		}
-		logger.trace(s"trySell: ${trySell.map(_ ⇒ "")}")
-
-		// Take the first buy order, and collect all following buyorders.
-		// If the first buy order failed, at least log it.
-		val allBuy = tryBuy.transform[List[MarketOrders.Item]]({ marketOrder ⇒
-			Success(marketOrder.authedIterable(itemTypeLink)(oAuth, retries).map(_.items).flatten.toList)
-		}, { throwable ⇒
-			// At least log something went wrong.
-			logger.info(s"Unable to fetch a buy, error msg: ${throwable.getMessage}")
-			Failure(throwable)
-		}).getOrElse(Nil)
-
-		// Idem as for buy.
-		val allSell = trySell.transform[List[MarketOrders.Item]]({ marketOrder ⇒
-			Success(marketOrder.authedIterable(itemTypeLink)(oAuth, retries).map(_.items).flatten.toList)
-		}, { throwable ⇒
-			// At least log something went wrong.
-			logger.info(s"Unable to fetch a buy, error msg: ${throwable.getMessage}")
-			Failure(throwable)
-		}).getOrElse(Nil)
-
-		(allBuy, allSell)
 	}
 
-	def getAllMarketHistory(regionName: String, auth: String) : Map[NamedCrestLink[ItemType], Option[MarketHistory]] = {
-		val itemTypes = getAllItemTypes(auth)
-		val atomicCounter = new AtomicInteger(0)
-		val nrItemTypes = itemTypes.size
-		val futures = for(itemType ← itemTypes) yield {
-			Future {
-				val res = getMarketHistory(regionName, itemType.name, auth)
-				val count = atomicCounter.incrementAndGet()
-				logger.debug(s"History $count/$nrItemTypes")
-				itemType → res
+	def getAllMarketHistory(regionName: String, auth: String)
+	: Future[Map[NamedCrestLink[ItemType], Option[MarketHistory]]] = {
+		async {
+			val itemTypes = await(getAllItemTypes(auth))
+			val atomicCounter = new AtomicInteger(0)
+			val nrItemTypes = itemTypes.size
+			val res = for(itemType ← itemTypes) yield {
+				async {
+					val res = await(getMarketHistory(regionName, itemType.name, auth))
+					val count = atomicCounter.incrementAndGet()
+					logger.debug(s"History $count/$nrItemTypes")
+					itemType → res
+				}
 			}
+			await(Future.sequence(res)).toMap
 		}
-		Await.result(Future.sequence(futures).map(_.toMap), 10 minutes)
 	}
 
 	def getMarketHistory(regionName: String,
-		                    itemTypeName: String,
-	                    @cacheKeyExclude auth: String) : Option[MarketHistory] = memoize(1 day) {
-		val oAuth = Some(auth)
+		                 itemTypeName: String,
+	                     @cacheKeyExclude auth: String) : Future[Option[MarketHistory]] = memoize(1 day) {
+		async {
+			val oAuth = Some(auth)
 
-		val region = getRegions(auth).get(regionName).map(_.link.href)
-		val marketIdRegex = """.*/(\d+)/.*""".r
-		val marketId = region.flatMap(marketIdRegex.findFirstMatchIn) map (_.group(1))
+			val regionHref = await(getRegion(regionName, auth).map(_.href))
+			val marketIdRegex = """.*/(\d+)/.*""".r
+			val marketId = marketIdRegex.findFirstMatchIn(regionHref) map (_.group(1))
 
-		// Get the itemType link.
-		val itemTypes = getAllItemTypes(auth)
-		val itemTypeLink = itemTypes.find(_.name == itemTypeName).map(_.href)
-		val itemTypeIdRegex = """.*/(\d+)/""".r
-		val itemId = itemTypeLink.flatMap(itemTypeIdRegex.findFirstMatchIn) map (_.group(1))
+			// Get the itemType link.
+			val itemTypes = await(getAllItemTypes(auth))
+			val itemTypeLink = itemTypes.find(_.name == itemTypeName).map(_.href)
+			val itemTypeIdRegex = """.*/(\d+)/""".r
+			val itemId = itemTypeLink.flatMap(itemTypeIdRegex.findFirstMatchIn) map (_.group(1))
 
-		val marketHistory = (for (
-			mId ← marketId;
-			iId ← itemId
-		) yield {
-			Util.retry(3) {
-				val res = MarketHistory.fetch(marketID = mId.toInt, typeID = iId.toInt, auth = oAuth)
-				res.failed.foreach(failure ⇒ logger.info(s"Failed fetching market history: $failure"))
-				res
-			}.toOption.flatten
-		}) flatten
+			val marketHistory = for (
+				mId ← marketId;
+				iId ← itemId
+			) yield {
+				Util.retryFuture(3) {
+					val res = MarketHistory.fetch(marketID = mId.toInt, typeID = iId.toInt, auth = oAuth)
+					res.failed.foreach(failure ⇒ logger.info(s"Failed fetching market history: $failure"))
+					res
+				}
+			}
 
-		// Sort the history backwards in time.
-		marketHistory.map { history ⇒ history.copy(items = history.items.sortBy(_.date)(Ordering[String].reverse))}
+			val simplifiedHistory = marketHistory match {
+				case Some(history) ⇒ history
+				case None ⇒ Future.failed(new NoSuchElementException("No market or itemid found."))
+			}
+
+			// Sort the history backwards in time.
+			await(simplifiedHistory).map { history ⇒ history.copy(items = history.items.sortBy(_.date)(Ordering[String].reverse))}
+		}
+	}
+
+	case class MarketData(item: String,
+	                      buyOrders: List[MarketOrders.Item],
+	                      sellOrders: List[MarketOrders.Item],
+	                      volume : Long)
+	def allMarketData(regionName: String, auth: String): Future[Iterable[MarketData]] = {
+		async {
+			val allMarketHistory = await(Market.getAllMarketHistory(regionName, auth))
+			val definedMarketTypes = allMarketHistory.filter(_._2.isDefined).map(_._1)
+			val allMarketOrders = await(Market.getMarketOrders(regionName, definedMarketTypes, auth))
+
+			// A more descriptive container of the required data.
+			case class MarketData(item: String,
+			                      buyOrders: List[MarketOrders.Item],
+			                      sellOrders: List[MarketOrders.Item],
+			                      volume : Long)
+
+			// merge both market orders and market history data
+			for (
+				itemType ← definedMarketTypes
+			) yield {
+				// Note that it is assumed that there exist entries for each item type.
+				val marketOrders = allMarketOrders(itemType.name)
+				val oMarketHistory = allMarketHistory.get(itemType).flatten
+				val volume = oMarketHistory.filter(_.items.size > 0)
+					.map(_.items.maxBy(_.date).volume).getOrElse {
+					logger.warn(s"History of item was empty: ${marketOrders._1}")
+					0L
+				}
+				Market.MarketData(itemType.name, marketOrders._1, marketOrders._2, volume)
+			}
+		}
 	}
 
 	/**
@@ -231,11 +276,14 @@ object Market extends LazyLogging {
 		(weightedBuy, weightedSell)
 	}
 
-	def getAllItemTypes(@cacheKeyExclude auth: String): List[NamedCrestLink[ItemType]] = memoize(2 days) {
-		val oAuth = Some(auth)
-		val root = Root.fetch(oAuth).get
-		val itemTypesRoot = root.itemTypes.follow(oAuth)
+	def getAllItemTypes(@cacheKeyExclude auth: String): Future[List[NamedCrestLink[ItemType]]] = memoize(2 days) {
+		async {
+			val oAuth = Some(auth)
+			val root = await(Root.fetch(oAuth))
+			val itemTypesRoot = await(root.itemTypes.follow(oAuth))
 
-		itemTypesRoot.authedIterable(Some(auth)).map(_.items).flatten.toList
+			val itemsList = Future.sequence(itemTypesRoot.authedIterator(oAuth).map(_.map(_.items)).toList)
+			await(itemsList).flatten
+		}
 	}
 }

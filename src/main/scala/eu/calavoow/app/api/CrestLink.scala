@@ -93,7 +93,6 @@ case class CrestLink[T: JsonReader](href: String) extends LazyLogging {
 		parsedResult.onFailure {
 			case x ⇒ logger.error(s"Error following link: $finalRequest\n ${x.getMessage}")
 		}
-
 		parsedResult
 	}
 }
